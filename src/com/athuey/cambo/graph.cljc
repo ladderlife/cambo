@@ -97,6 +97,20 @@
              {:graph graph :paths []}
              pathmaps))))
 
+(defn set-path-value
+  ([graph {:keys [path value]}]
+    (set-path-value graph path value))
+  ([graph [k & path] value]
+    (let [graph (if (or (boxed? graph)
+                        (not (map? graph)))
+                  {}
+                  graph)]
+      (if (seq path)
+        (assoc graph k (set-path-value (clojure.core/get graph k) path value))
+        (assoc graph k (if (boxed? value)
+                         value
+                         (atom value)))))))
+
 (defrecord GraphDataSource [graph])
 
 ;; have to extend type due to get / set names clashing with core ... oops!
