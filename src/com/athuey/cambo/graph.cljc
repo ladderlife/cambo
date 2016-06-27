@@ -2,12 +2,11 @@
   (:refer-clojure :exclude [get set atom ref keys])
   (:require [com.athuey.cambo.core :refer [boxed? atom atom? ref? keys] :as core]))
 
-;; TODO: handle path-value(s)
-
 (defn get
   ([graph pathsets]
-   (get graph pathsets {:normalize false}))
-  ([graph pathsets {:keys [normalize]}]
+   (get graph pathsets {:normalize false
+                        :boxed false}))
+  ([graph pathsets {:keys [normalize boxed]}]
    (letfn [(get-pathset [node path opt result [ks & pathset :as ps]]
              ;; TODO: might be able to flatten this kinda like set
              (cond
@@ -47,7 +46,9 @@
                                        (into [:graph] (if normalize
                                                         (conj opt k)
                                                         (conj path k)))
-                                       value)
+                                       (if boxed
+                                         value
+                                         (:value value)))
                              (update result :missing conj (conj opt k)))))
                        result
                        (keys ks))))]
@@ -117,15 +118,18 @@
 (extend-type GraphDataSource
   core/IDataSource
   (get [{:keys [graph]} pathsets]
-    (let [g @graph]
-      (get @graph pathsets)))
+    (get @graph pathsets {:normalize true
+                          :boxed true}))
   (set [{:keys [graph]} pathmaps]
     (with-local-vars [ps nil]
       (let [g (swap! graph (fn [graph]
                              (let [{:keys [graph paths] :as r} (set graph pathmaps)]
                                (var-set ps paths)
-                               graph)))]
-        (get g @ps)))))
+                               graph)))
+            {:keys [graph]} (get g @ps {:normalize true
+                                        :boxed true})]
+        {:graph graph
+         :paths @ps}))))
 
 (defn as-datasource [graph]
   (GraphDataSource. (clojure.core/atom (:graph (set {} [graph])))))
