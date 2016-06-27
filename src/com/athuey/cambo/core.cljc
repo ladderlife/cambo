@@ -34,6 +34,14 @@
   (or (atom? value)
       (ref? value)))
 
+(defrecord PathValue [path value])
+
+(defn pv [path value]
+  (PathValue. path value))
+
+(defn path-value [path value]
+  (PathValue. path value))
+
 ;; TODO:
 ;; - pathmap
 ;; - pathvalue

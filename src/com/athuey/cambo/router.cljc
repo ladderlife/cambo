@@ -222,7 +222,7 @@
        (map (fn [ns]
               (let [from (first ns)
                     to (last ns)]
-                (range from (inc to)))))
+                (core/range from (inc to)))))
        (into [])))
 
 (defn indices [ranges]
@@ -296,9 +296,16 @@
             (get path))]
     (execute router matcher runner pathsets)))
 
-(defn get [router pathsets]
-  (last (gets router pathsets)))
+(defrecord Router [route-tree])
+
+(extend-type Router
+  core/IDataSource
+  (get [{:keys [route-tree]} pathsets]
+    ;; TODO: doesn't impl `:missing`
+    {:graph (last (gets route-tree pathsets))})
+  (set [_ _]
+    (throw (ex-info "no impl" {}))))
 
 (defn router
   [routes]
-  (route-tree routes))
+  (Router. (route-tree routes)))
