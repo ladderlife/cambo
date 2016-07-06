@@ -75,3 +75,18 @@
                   :container UserQuote
                   :model model})
   (.getElementById js/document "app"))
+
+(defonce subscription (let [cb (fn []
+                                 (println "cache changed"))]
+                        (model/subscribe model cb)))
+
+(defonce interval (js/setInterval
+           (fn []
+             (println "updating age")
+
+             ;; TODO: lol add get-value / get-cache-value method
+             (let [age (get-in (model/get-cache model [[:user/by-id 1 :user/age]])
+                               [:user/by-id 1 :user/age])]
+               ;; TODO: lol add set-value / set-cache-value method
+               (model/set-cache model [{:user/by-id {1 {:user/age (inc age)}}}])))
+           2000))

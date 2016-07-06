@@ -137,32 +137,70 @@
           :let [pathset (stub-fragments pathset)]]
       (into root pathset))))
 
-
-#?(:cljs (defn container-componentWillMount [this fragments]
-           (let [{:keys [model]} (context this)
-                 pathsets (->> (fragments nil)
-                               (mapcat (fn [[name fragment]]
-                                         (let [fragment (Fragment. (pull fragment))
-                                               root (get-in (props this) [name :cambo/path])]
-                                           (local-query root fragment))))
-                               (into []))
-                 query-data (-> model model/with-path-info (model/get-cache pathsets))]
-             (set-state this {:query-data query-data}))))
-
-#?(:cljs (defn container-render [this component fragments]
-           (let [query-data (-> this state :query-data)
-                 fragment-names (keys (fragments nil))
-                 component-props (into {} (for [[name {:keys [cambo/path]}] (select-keys (props this) fragment-names)]
-                                            [name (get-in query-data path)]))
-                 component-props (merge (props this)
-                                        component-props)]
-             (js/React.createElement component (->props component-props)))))
-
 (defn query-pathsets [queries container]
   (into [] (for [[name fragment] (get-fragments container)
                  :let [query (get queries name)]
                  pathset (expand-fragment fragment)]
              (into query pathset))))
+
+#?(:cljs (defn create-container
+           [component {:keys [initial-variables prepare-variables fragments]
+                       :or {initial-variables {} prepare-variables identity}}]
+           (let [container (fn container []
+                             (this-as this
+                               ;; TODO: state!
+                               (set! (.-mounted this) true)
+                               (.apply js/React.Component this (js-arguments))
+                               this))]
+             (set! (.-prototype container)
+                   (goog.object/clone js/React.Component.prototype))
+
+             (set! (.-contextTypes container) (->context React.PropTypes.object))
+
+             (specify! container
+               IFragments
+               (fragments [_]
+                 (fragments nil)))
+
+             (specify! (.-prototype container)
+               Object
+               (shouldComponentUpdate [this next-props next-state]
+                 ;; TODO: only care about the path of fragment props, other props deep compare
+                 (let [get-paths (fn [props]
+                                   (into {} (for [[k {:keys [cambo/path] :as v}] props]
+                                              [k (if path path v)])))
+                       current-props (get-paths (props this))
+                       current-state (state this)
+                       next-props (get-paths (get-props next-props))
+                       next-state (get-state next-state)]
+                   (or (not= current-props next-props)
+                       (not= current-state next-state))))
+               (componentWillMount [this]
+                 (let [{:keys [model]} (context this)
+                       pathsets (->> (fragments nil)
+                                     (mapcat (fn [[name fragment]]
+                                               (let [fragment (Fragment. (pull fragment))
+                                                     root (get-in (props this) [name :cambo/path])]
+                                                 (local-query root fragment))))
+                                     (into []))
+                       query-data (-> model model/with-path-info (model/get-cache pathsets))
+                       subscription (model/subscribe model (fn []
+                                                             (let [query-data (-> model model/with-path-info (model/get-cache pathsets))]
+                                                               (set-state this {:query-data query-data}))))]
+                   (set-state this {:query-data query-data
+                                    :subscription subscription})))
+               (componentWillUnmount [this]
+                 (let [{:keys [subscription]} (state this)]
+                   (when subscription (subscription))))
+               (render [this]
+                 (let [query-data (-> this state :query-data)
+                       fragment-names (keys (fragments nil))
+                       component-props (into {} (for [[name {:keys [cambo/path]}] (select-keys (props this) fragment-names)]
+                                                  [name (get-in query-data path)]))
+                       component-props (merge (props this)
+                                              component-props)]
+                   (js/React.createElement component (->props component-props)))))
+             container)))
 
 #?(:cljs (do
            (defn Renderer []

@@ -79,25 +79,12 @@
              (fn [this# writer# opt#]
                (cljs.core/-write writer# ~(str rname)))))))
 
-(defmacro defcontainer [name map]
-  (let [map (merge map {:initial-variables {}
-                        :prepare-variables identity})
-        {:keys [initial-variables prepare-variables component fragments]} map
-        [_ & body] component
-        component-name (symbol (str name "*"))]
+(defmacro defcontainer [name {:keys [component] :as spec}]
+  (let [[_ & body] component
+        component-name (symbol (str name "*"))
+        spec (select-keys spec [:fragments :prepare-variables :initial-variables])]
     `(do
        ;; TODO: create component fn which takes a display name and var name -- then gen-sym shit
        (defcomponent ~component-name ~@body)
-       ;; TODO: should be a way to not expand this every component -- container stuff is identical minus spec
-       (defcomponent ~name
-                     (~'componentWillMount [this#]
-                       (com.athuey.cambo.component/container-componentWillMount this# ~fragments))
-                     (~'render [this#]
-                       (com.athuey.cambo.component/container-render this# ~component-name ~fragments)))
 
-       (set! (.-contextTypes ~name) (com.athuey.cambo.component/->context React.PropTypes.object))
-
-       (specify! ~name
-         ~'com.athuey.cambo.component/IFragments
-         (~'fragments [this#]
-           (~fragments nil))))))
+       (def ~name (com.athuey.cambo.component/create-container ~component-name ~spec)))))
