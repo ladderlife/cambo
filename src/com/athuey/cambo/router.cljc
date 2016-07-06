@@ -300,10 +300,10 @@
 
 (extend-type Router
   core/IDataSource
-  (get [{:keys [route-tree]} pathsets]
+  (get [{:keys [route-tree]} pathsets cb]
     ;; TODO: doesn't impl `:missing`
-    {:graph (last (gets route-tree pathsets))})
-  (set [_ _]
+    (cb {:graph (last (gets route-tree pathsets))}))
+  (set [_ _ _]
     (throw (ex-info "no impl" {}))))
 
 (defn router

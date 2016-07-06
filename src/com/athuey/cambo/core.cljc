@@ -1,11 +1,12 @@
 (ns com.athuey.cambo.core
-  (:refer-clojure :exclude [get set atom ref keys range]))
+  (:refer-clojure :exclude [get set atom ref keys range ->Atom Atom ->Ref Ref ->Range Range]))
 
 ;;; DATASOURCE
 
 (defprotocol IDataSource
-  (get [this pathsets])
-  (set [this pathmaps]))
+  ;; TODO: do we want this to be a single call cb, or observable?
+  (get [this pathsets cb])
+  (set [this pathmaps cb]))
 
 ;;; GRAPH
 

@@ -5,54 +5,57 @@
 (defn get
   ([graph pathsets]
    (get graph pathsets {:normalize false
+                        :path-info false
                         :boxed false}))
-  ([graph pathsets {:keys [normalize boxed]}]
-   (letfn [(get-pathset [node path opt result [ks & pathset :as ps]]
-             ;; TODO: might be able to flatten this kinda like set
-             (cond
-               (nil? node)
-               (update result :missing conj (into opt ps))
+  ([graph pathsets {:keys [normalize boxed path-info]}]
+   (letfn [(get-pathset [node path opt result [ks & pathset]]
+             (reduce (fn [result k]
+                       (let [node (clojure.core/get node k)
+                             path (conj path k)
+                             opt (conj opt k)
+                             result (if (and path-info (some? node))
+                                      (do (assoc-in result
+                                                    (into [:graph] (conj path :cambo/path))
+                                                    opt))
+                                      result)]
+                         (if (seq pathset)
+                           (cond
+                             (nil? node)
+                             (update result :missing conj (into opt pathset))
 
-               (boxed? node)
-               result
-
-               (seq pathset)
-               (reduce (fn [result k]
-                         (let [node' (clojure.core/get node k)]
-                           (if (ref? node')
+                             (ref? node)
                              (let [result (if normalize
-                                            (assoc-in result (into [:graph] (conj opt k)) node')
+                                            (assoc-in result (into [:graph] opt) node)
                                             result)
-                                   path' (:path node')]
-                               (get-pathset (get-in graph path')
-                                            (conj path k)
-                                            path'
-                                            result
-                                            pathset))
-                             (get-pathset node'
-                                          (conj path k)
-                                          (conj opt k)
-                                          result
-                                          pathset))))
-                       result
-                       (keys ks))
+                                   opt (:path node)
+                                   result (if path-info
+                                            (do (assoc-in result
+                                                          (into [:graph] (conj path :cambo/path))
+                                                          opt))
+                                            result)
+                                   node (get-in graph opt)]
+                               (get-pathset node path opt result pathset))
 
-               :else
-               (reduce (fn [result k]
-                         (let [value (clojure.core/get node k)]
-                           ;; TODO: do we want to require boxed graph?
-                           (if (atom? value)
-                             (assoc-in result
-                                       (into [:graph] (if normalize
-                                                        (conj opt k)
-                                                        (conj path k)))
-                                       (if boxed
-                                         value
-                                         (:value value)))
-                             (update result :missing conj (conj opt k)))))
-                       result
-                       (keys ks))))]
+                             (atom? node)
+                             result
 
+                             :else
+                             (get-pathset node path opt result pathset))
+                           (cond
+                             (atom? node) (assoc-in result (into [:graph] (if normalize opt path))
+                                                    (if boxed
+                                                      node
+                                                      (:value node)))
+                             (ref? node) (if path-info
+                                           (do (let [opt (:path node)]
+                                                 (assoc-in result
+                                                           (into [:graph] (conj path :cambo/path))
+                                                           opt)))
+                                           result)
+                             (nil? node) (update result :missing conj opt)
+                             :else result))))
+                     result
+                     (keys ks)))]
      (reduce (partial get-pathset graph [] [])
              {:graph {}
               :missing []}
@@ -117,19 +120,30 @@
 ;; have to extend type due to get / set names clashing with core ... oops!
 (extend-type GraphDataSource
   core/IDataSource
-  (get [{:keys [graph]} pathsets]
-    (get @graph pathsets {:normalize true
-                          :boxed true}))
-  (set [{:keys [graph]} pathmaps]
-    (with-local-vars [ps nil]
-      (let [g (swap! graph (fn [graph]
-                             (let [{:keys [graph paths] :as r} (set graph pathmaps)]
-                               (var-set ps paths)
-                               graph)))
-            {:keys [graph]} (get g @ps {:normalize true
-                                        :boxed true})]
-        {:graph graph
-         :paths @ps}))))
+  (get [{:keys [graph]} pathsets cb]
+    (cb (get @graph pathsets {:normalize true
+                              :boxed true}))
+    nil)
+  (set [{:keys [graph]} pathmaps cb]
+    #?(:cljs (let [ps (clojure.core/atom nil)]
+               (let [g (swap! graph (fn [graph]
+                                      (let [{:keys [graph paths] :as r} (set graph pathmaps)]
+                                        (reset! ps paths)
+                                        graph)))
+                     {:keys [graph]} (get g @ps {:normalize true
+                                                 :boxed true})]
+                 (cb {:graph graph
+                      :paths @ps})))
+       :clj (with-local-vars [ps nil]
+              (let [g (swap! graph (fn [graph]
+                                     (let [{:keys [graph paths] :as r} (set graph pathmaps)]
+                                       (var-set ps paths)
+                                       graph)))
+                    {:keys [graph]} (get g @ps {:normalize true
+                                                :boxed true})]
+                (cb {:graph graph
+                     :paths @ps}))))
+    nil))
 
 (defn as-datasource [graph]
   (GraphDataSource. (clojure.core/atom (:graph (set {} [graph])))))

@@ -14,7 +14,6 @@
                                   "client_secret" (env :github-client-secret)}})
 
 (defn api-get [resource]
-  (println "HTTP/GET" resource)
   (:body (http/get (str base-url resource) base-options)))
 
 (defn api-count [resource]
@@ -87,6 +86,9 @@
 (comment
 
   (let [router (router/router routes)]
+    (core/get router [[:org/by-id 913567 [:org/name :org/description]]]))
+
+  (let [router (router/router routes)]
     (core/get router [[:org/by-id [913567] :org/repos :length]
                       [:org/by-id [913567] :org/repos (core/range 0 1) [:repo/description
                                                                         :repo/name
@@ -141,6 +143,13 @@
                                                                                     {:repo/owner [:org/name
                                                                                                   :org/description]}]}]}]}]}])))
 
+  (let [router (router/router routes)
+        model (model/model {:datasource router})]
+    (model/get model [[:org/by-id 913567 [:org/name :org/description]]
+                      [:org/by-id 913567 :org/repos (core/range 0 5) [:repo/name :repo/description]]]))
+
+
+
   (let [router (router/router routes)]
     (router/get router [[:org/by-login ["netflix"] :org/repos :length]]))
 
@@ -178,5 +187,12 @@
                                                                             {:repo/owner [:org/name
                                                                                           :org/description]}]}]}]}]}]))
 
-  )
+  {:route [:user/by-id INTEGERS [:user/name :user/age]]
+   :get (fn [[_ ids keys]]
+          (for [user (get-users backend ids)
+                key keys]
+            {:path [:org/by-id id key]
+             :value (get user key)}))}
 
+
+  )
