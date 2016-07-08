@@ -1,5 +1,5 @@
 (ns com.athuey.cambo.model
-  (:refer-clojure :exclude [get set])
+  (:refer-clojure :exclude [get set force])
   (:require [com.athuey.cambo.core :as core]
             [com.athuey.cambo.graph :as graph]))
 

@@ -289,23 +289,36 @@
                 nil)))]
     (execute* {} pathsets)))
 
-(defn gets [router pathsets]
+(defn gets [router pathsets ctx]
   (letfn [(matcher [tree pathset]
             (match tree pathset :get))
           (runner [{:keys [get]} path]
-            (get path))]
+            (get path ctx))]
     (execute router matcher runner pathsets)))
 
-(defrecord Router [route-tree])
+(defn get
+  ([router pathsets]
+   (get router pathsets {}))
+  ([{:keys [route-tree]} pathsets ctx]
+   (last (gets route-tree pathsets ctx))))
 
-(extend-type Router
-  core/IDataSource
-  (get [{:keys [route-tree]} pathsets cb]
-    ;; TODO: doesn't impl `:missing`
-    (cb {:graph (last (gets route-tree pathsets))}))
-  (set [_ _ _]
-    (throw (ex-info "no impl" {}))))
+(defrecord Router [route-tree])
 
 (defn router
   [routes]
   (Router. (route-tree routes)))
+
+(defrecord RouterDatasource
+  [router ctx]
+  core/IDataSource
+  (get [_ pathsets cb]
+    ;; TODO: doesn't impl `:missing`
+    (cb {:graph (get router pathsets ctx)}))
+  (set [_ _ _]
+    (throw (ex-info "no impl" {}))))
+
+(defn as-datasource
+  ([router]
+   (as-datasource router {}))
+  ([router ctx]
+   (RouterDatasource. router ctx)))

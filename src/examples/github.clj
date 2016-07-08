@@ -30,7 +30,7 @@
                                  :org/login
                                  :org/id
                                  :org/url]]
-    :get (fn [[_ ids keys]]
+    :get (fn [[_ ids keys] _]
            (for [id ids
                  :let [org (api-get (str "/organizations/" id))]
                  :when org
@@ -40,7 +40,7 @@
                          (get org github-key))))}
 
    {:route [:org/by-id INTEGERS :org/repos RANGES]
-    :get (fn [[_ ids _ ranges]]
+    :get (fn [[_ ids _ ranges] _]
            (for [id ids
                  :let [repos (into [] (api-get (str "/organizations/" id "/repos")))]
                  idx (router/indices ranges)
@@ -50,7 +50,7 @@
                          (core/ref [:repo/by-id (:id repo)]))))}
 
    {:route [:org/by-id INTEGERS :org/repos :length]
-    :get (fn [[_ ids _ _]]
+    :get (fn [[_ ids _ _] _]
            (for [id ids
                  :let [repo-count (api-count (str "/organizations/" id "/repos"))]
                  :when repo-count]
@@ -68,7 +68,7 @@
                                   :repo/url
                                   :repo/forks
                                   :repo/owner]]
-    :get (fn [[_ ids keys]]
+    :get (fn [[_ ids keys] _]
            (for [id ids
                  :let [repo (api-get (str "/repositories/" id))]
                  :when repo
@@ -86,17 +86,17 @@
 (comment
 
   (let [router (router/router routes)]
-    (core/get router [[:org/by-id 913567 [:org/name :org/description]]]))
+    (router/get router [[:org/by-id 913567 [:org/name :org/description]]]))
 
   (let [router (router/router routes)]
-    (core/get router [[:org/by-id [913567] :org/repos :length]
-                      [:org/by-id [913567] :org/repos (core/range 0 1) [:repo/description
-                                                                        :repo/name
-                                                                        :repo/full-name
-                                                                        :repo/forks
-                                                                        :repo/stargazers-count]]
-                      [:org/by-id [913567] :org/repos (core/range 0 1) :repo/owner [:org/name
-                                                                                    :org/description]]]))
+    (router/get router [[:org/by-id [913567] :org/repos :length]
+                        [:org/by-id [913567] :org/repos (core/range 0 1) [:repo/description
+                                                                          :repo/name
+                                                                          :repo/full-name
+                                                                          :repo/forks
+                                                                          :repo/stargazers-count]]
+                        [:org/by-id [913567] :org/repos (core/range 0 1) :repo/owner [:org/name
+                                                                                      :org/description]]]))
 
   (def query [{:org/by-id [{913567 [{:org/repos [:length
                                                  {(core/range 0 1) [:repo/description
@@ -144,25 +144,15 @@
                                                                                                   :org/description]}]}]}]}]}])))
 
   (let [router (router/router routes)
-        model (model/model {:datasource router})]
+        model (model/model {:datasource (router/as-datasource router)})
+        result (promise)]
     (model/get model [[:org/by-id 913567 [:org/name :org/description]]
-                      [:org/by-id 913567 :org/repos (core/range 0 5) [:repo/name :repo/description]]]))
+                      [:org/by-id 913567 :org/repos (core/range 0 5) [:repo/name :repo/description]]]
+               (partial deliver result))
+    (deref result 500 :timeout))
 
-
-
-  (let [router (router/router routes)]
-    (router/get router [[:org/by-login ["netflix"] :org/repos :length]]))
-
-  (let [router (router/router routes)]
-    (router/get router [[:org/by-login ["facebook" "netflix"] [:org/description :org/email :org/name :org/login :org/id]]]))
-
-  (let [router (router/router routes)]
-    (router/get router [[:org/by-login ["netflix"] :org/repos (core/range 0 10)]]))
-
-  (let [get (-> routes first :get)]
-    (get [:org/by-login ["netflix"] [:org/description :org/email :org/name :org/login]]))
-
-  (let [m (model/model {:datasource (router/router routes)})]
+  (let [m (model/model {:datasource (router/as-datasource (router/router routes))})
+        result (promise)]
     (model/get m (pull [{:org/by-id [{913567 [:org/name
                                               :org/description
                                               {:org/repos [:length
@@ -172,27 +162,8 @@
                                                                               :repo/forks
                                                                               :repo/stargazers-count
                                                                               {:repo/owner [:org/name
-                                                                                            :org/description]}]}]}]}]}])))
-
-  (def m (model/model {:datasource (router/router routes)}))
-
-  (model/get m (pull [{:org/by-id [{913567 [:org/name
-                                            :org/description
-                                            {:org/repos [:length
-                                                         {(core/range 0 5) [:repo/description
-                                                                            :repo/name
-                                                                            :repo/full-name
-                                                                            :repo/forks
-                                                                            :repo/stargazers-count
-                                                                            {:repo/owner [:org/name
-                                                                                          :org/description]}]}]}]}]}]))
-
-  {:route [:user/by-id INTEGERS [:user/name :user/age]]
-   :get (fn [[_ ids keys]]
-          (for [user (get-users backend ids)
-                key keys]
-            {:path [:org/by-id id key]
-             :value (get user key)}))}
-
+                                                                                            :org/description]}]}]}]}]}])
+               (partial deliver result))
+    (deref result 500 :timeout))
 
   )
