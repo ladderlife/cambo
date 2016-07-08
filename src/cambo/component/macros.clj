@@ -1,4 +1,4 @@
-(ns com.athuey.cambo.component.macros
+(ns cambo.component.macros
   (:require [cljs.core :refer [js-obj specify! this-as js-arguments]]
             [cljs.analyzer :as ana]))
 
@@ -23,21 +23,21 @@
    (fn [[name [this next-props] & body]]
      `(~name [this# next-props#]
         (let [~this this#
-              ~next-props (com.athuey.cambo.component/get-props next-props#)]
+              ~next-props (cambo.component/get-props next-props#)]
           ~@body)))
    'componentWillUpdate
    (fn [[name [this next-props next-state] & body]]
      `(~name [this# next-props# next-state#]
         (let [~this this#
-              ~next-props (com.athuey.cambo.component/get-props next-props#)
-              ~next-state (com.athuey.cambo.component/get-state next-state#)]
+              ~next-props (cambo.component/get-props next-props#)
+              ~next-state (cambo.component/get-state next-state#)]
           ~@body)))
    'componentDidUpdate
    (fn [[name [this prev-props prev-state] & body]]
      `(~name [this# prev-props# prev-state#]
         (let [~this this#
-              ~prev-props (com.athuey.cambo.component/get-props prev-props#)
-              ~prev-state (com.athuey.cambo.component/get-state prev-state#)]
+              ~prev-props (cambo.component/get-props prev-props#)
+              ~prev-state (cambo.component/get-state prev-state#)]
           ~@body)))})
 
 (defn reshape [dt reshape]
@@ -87,4 +87,4 @@
        ;; TODO: create component fn which takes a display name and var name -- then gen-sym shit
        (defcomponent ~component-name ~@body)
 
-       (def ~name (com.athuey.cambo.component/create-container ~component-name ~spec)))))
+       (def ~name (cambo.component/create-container ~component-name ~spec)))))

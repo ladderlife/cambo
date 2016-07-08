@@ -1,6 +1,7 @@
-(ns com.athuey.cambo.component
-  (:require [com.athuey.cambo.core :as core]
-            [com.athuey.cambo.model :as model]))
+(ns cambo.component
+  (:require [cambo.core :as core]
+            [cambo.model :as model]
+            #?(:cljs [cljsjs.react])))
 
 (def props-key "cambo$props")
 

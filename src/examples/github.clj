@@ -1,7 +1,7 @@
 (ns examples.github
-  (:require [com.athuey.cambo.core :as core :refer [path-value]]
-            [com.athuey.cambo.router :as router :refer [KEYS INTEGERS RANGES]]
-            [com.athuey.cambo.model :as model]
+  (:require [cambo.core :as core :refer [path-value]]
+            [cambo.router :as router :refer [KEYS INTEGERS RANGES]]
+            [cambo.model :as model]
             [clj-http.client :as http]
             [clojure.edn :as edn]
             [environ.core :refer [env]]))

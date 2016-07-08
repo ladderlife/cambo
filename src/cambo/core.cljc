@@ -1,4 +1,4 @@
-(ns com.athuey.cambo.core
+(ns cambo.core
   (:refer-clojure :exclude [get set atom ref keys range ->Atom Atom ->Ref Ref ->Range Range]))
 
 ;;; DATASOURCE

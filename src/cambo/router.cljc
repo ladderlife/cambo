@@ -1,7 +1,7 @@
-(ns com.athuey.cambo.router
+(ns cambo.router
   (:refer-clojure :exclude [get set])
-  (:require [com.athuey.cambo.core :as core]
-            [com.athuey.cambo.graph :as graph]))
+  (:require [cambo.core :as core]
+            [cambo.graph :as graph]))
 
 ;;; ROUTES
 

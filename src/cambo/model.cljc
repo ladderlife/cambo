@@ -1,7 +1,7 @@
-(ns com.athuey.cambo.model
+(ns cambo.model
   (:refer-clojure :exclude [get set force])
-  (:require [com.athuey.cambo.core :as core]
-            [com.athuey.cambo.graph :as graph]))
+  (:require [cambo.core :as core]
+            [cambo.graph :as graph]))
 
 (defrecord Model
   [cache datasource subscribers])

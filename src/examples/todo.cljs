@@ -1,9 +1,9 @@
 (ns examples.todo
-  (:require-macros [com.athuey.cambo.component.macros :refer [defcomponent defcontainer]])
-  (:require [com.athuey.cambo.component :as comp :refer [props get-fragment expand-fragment]]
-            [com.athuey.cambo.core :as core]
-            [com.athuey.cambo.model :as model]
-            [com.athuey.cambo.graph :as graph]
+  (:require-macros [cambo.component.macros :refer [defcomponent defcontainer]])
+  (:require [cambo.component :as comp :refer [props get-fragment expand-fragment]]
+            [cambo.core :as core]
+            [cambo.model :as model]
+            [cambo.graph :as graph]
             [cljsjs.react]
             [cljsjs.react.dom]
             [cljs.pprint :refer [pprint]]))

@@ -1,6 +1,6 @@
-(ns com.athuey.cambo.graph
+(ns cambo.graph
   (:refer-clojure :exclude [get set atom ref keys])
-  (:require [com.athuey.cambo.core :refer [boxed? atom atom? ref? keys] :as core]))
+  (:require [cambo.core :refer [boxed? atom atom? ref? keys] :as core]))
 
 (defn get
   ([graph pathsets]
