@@ -164,18 +164,24 @@
 
              (specify! (.-prototype container)
                Object
-               (shouldComponentUpdate [this next-props next-state]
+               (shouldComponentUpdate [this next-props next-state next-context]
                  ;; TODO: only care about the path of fragment props, other props deep compare
                  (let [get-paths (fn [props]
                                    (into {} (for [[k {:keys [cambo/path] :as v}] props]
                                               [k (if path path v)])))
                        current-props (get-paths (props this))
                        current-state (state this)
+                       current-context (context this)
                        next-props (get-paths (get-props next-props))
-                       next-state (get-state next-state)]
+                       next-state (get-state next-state)
+                       next-context (get-context next-context)]
                    (or (not= current-props next-props)
-                       (not= current-state next-state))))
+                       (not= current-state next-state)
+                       (not= current-context next-context))))
+               (initialize [this]
+                 )
                (componentWillMount [this]
+                 ;; TODO: initialize
                  (let [{:keys [model]} (context this)
                        pathsets (->> (fragments nil)
                                      (mapcat (fn [[name fragment]]
@@ -189,9 +195,23 @@
                                                                (set-state this {:query-data query-data}))))]
                    (set-state this {:query-data query-data
                                     :subscription subscription})))
+               (componentWillReceiveProps [this next-props next-context]
+                 ;; TODO: initialize
+                 )
                (componentWillUnmount [this]
+                 (set! (.-mounted this) false)
                  (let [{:keys [subscription]} (state this)]
                    (when subscription (subscription))))
+               ;; fns ....
+               ;; - _createQuerySetAndFragmentPointers
+               ;; - _runVariables
+               ;; - _initialize
+               ;; - _cleanup
+               ;; - _updateFragmentResolvers
+               ;; - _handleFragmentDataUpdate
+               ;; - _updateFragmentPointers
+               ;; - _getQueryData
+               ;; -
                (render [this]
                  (let [query-data (-> this state :query-data)
                        fragment-names (keys (fragments nil))
@@ -203,11 +223,30 @@
              container)))
 
 #?(:cljs (do
+           (defn StaticContainer []
+             (this-as this
+               (.apply js/React.Component this (js-arguments))
+               this))
+
+           (set! (.-prototype StaticContainer)
+                 (goog.object/clone js/React.Component.prototype))
+
+           (specify! (.-prototype StaticContainer)
+             Object
+             (shouldComponentUpdate [this next-props next-state]
+               (not (not (.-shouldUpdate next-props))))
+             (render [this]
+               (when-let [child (.. this -props -children)]
+                 (React.Children.only child))))))
+
+#?(:cljs (do
            (defn Renderer []
              (this-as this
                ;; TODO: state!
                (set! (.-mounted this) true)
-               (.apply js/React.Component this (js-arguments))))
+               (set! (.-state this) (->state {:readystate nil}))
+               (.apply js/React.Component this (js-arguments))
+               this))
 
            (set! (.-prototype Renderer)
                  (goog.object/clone js/React.Component.prototype))
@@ -216,24 +255,45 @@
 
            (specify! (.-prototype Renderer)
              Object
-             (run-queries [this {:keys [container model queries]}]
-               (let [pathsets (query-pathsets queries container)]
-                 ;; TODO: create a `load` (prime?) and `force` method for `model`
-                 (model/get model pathsets (fn [_]
-                                             (set-state this {:readystate true})))))
+             (run-queries [this {:keys [container model queries force]}]
+               (let [pathsets (query-pathsets queries container)
+                     on-readystate (fn [readystate]
+                                     (if (.-mounted this)
+                                       (set-state this {:readystate readystate})
+                                       (.handle-readystate-change this readystate)))]
+                 (if force
+                   (model/force model pathsets on-readystate)
+                   (model/prime model pathsets on-readystate))))
+             (handle-readystate-change [this readystate]
+               (when-let [on-readystate-change (:on-readystate-change (props this))]
+                 (on-readystate-change readystate)))
              (getChildContext [this]
                (let [{:keys [model]} (props this)]
                  (->context {:model model})))
              (componentDidMount [this]
                (.run-queries this (props this)))
+             (componentWillReceiveProps [this next-props]
+               (let [renderer-props [:model :queries :container :force]]
+                 (when-not (= (select-keys (props this) renderer-props)
+                              (select-keys (get-props next-props) renderer-props))
+                   (set-state this {:readystate nil})
+                   (.run-queries this (get-props next-props)))))
+             (componentDidUpdate [this prev-props prev-state]
+               (let [readystate (:readystate (state this))
+                     prev-readystate (:readystate (get-state prev-state))]
+                 (when-not (= readystate prev-readystate)
+                   (.handle-readystate-change this readystate))))
+             (componentWillUnmount [this]
+               (set! (.-mounted this) false))
              (render [this]
                (let [{:keys [container queries]} (props this)
                      {:keys [readystate]} (state this)
                      container-props (into {} (for [[name query] queries]
-                                                [name {:cambo/path query}]))]
-                 (if readystate
-                   (js/React.createElement container (->props container-props))
-                   (js/React.createElement "h1" nil "WAITING FOR DATAS")))))))
+                                                [name {:cambo/path query}]))
+                     ;; TODO: support render prop -- handle js/undefined response
+                     children (when readystate
+                                (js/React.createElement container (->props container-props)))]
+                 (js/React.createElement StaticContainer #js {"shouldUpdate" (some? children)} children))))))
 
 #?(:cljs (defn renderer [props]
            (js/React.createElement Renderer (->props props))))

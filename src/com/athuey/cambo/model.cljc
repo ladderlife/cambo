@@ -84,4 +84,19 @@
   (core/set datasource pathmaps (fn [{:keys [paths]}]
                                   (cb (get-cache m paths)))))
 
+(defn prime
+  [{:keys [cache datasource] :as m} pathsets cb]
+  (let [{:keys [graph missing]} (graph/get @cache pathsets (get-options m))]
+    (if (seq missing)
+      (core/get datasource missing (fn [{:keys [graph]}]
+                                     (set-cache m [graph])
+                                     (cb true)))
+      (cb {:ready true}))))
+
+(defn force
+  [{:keys [cache datasource] :as m} pathsets cb]
+  (core/get datasource pathsets (fn [{:keys [graph]}]
+                                  (set-cache m [graph])
+                                  (cb true))))
+
 ;; TODO: rest of falcor model interface as necessary

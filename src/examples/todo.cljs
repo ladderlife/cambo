@@ -82,8 +82,6 @@
 
 (defonce interval (js/setInterval
            (fn []
-             (println "updating age")
-
              ;; TODO: lol add get-value / get-cache-value method
              (let [age (get-in (model/get-cache model [[:user/by-id 1 :user/age]])
                                [:user/by-id 1 :user/age])]
