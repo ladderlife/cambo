@@ -205,9 +205,12 @@
                        :or {initial-variables {} prepare-variables default-prepare-variables}}]
            (let [container (fn container []
                              (this-as this
-                               ;; TODO: state!
-                               (set! (.-mounted this) true)
                                (.apply js/React.Component this (js-arguments))
+                               (set! (.-mounted this) true)
+                               (set! (.-state this) (->state {:query-data nil
+                                                              :variables nil
+                                                              ;; TODO: add set-variables functionality
+                                                              :cambo/prop {}}))
                                this))]
              (set! (.-prototype container)
                    (goog.object/clone js/React.Component.prototype))
@@ -225,15 +228,16 @@
              (specify! (.-prototype container)
                Object
                (shouldComponentUpdate [this next-props next-state next-context]
-                 ;; TODO: only care about the path of fragment props, other props deep compare
-                 ;; TODO: how do children apply here?
-                 (let [get-paths (fn [props]
-                                   (into {} (for [[k {:keys [cambo/path] :as v}] props]
-                                              [k (if path path v)])))
-                       current-props (get-paths (props this))
+                 (let [update-props (fn [props]
+                                      (reduce (fn [props key]
+                                                (let [path (get-path props key)]
+                                                  (assoc props key path)))
+                                              props
+                                              (keys fragments)))
+                       current-props (update-props (props this))
                        current-state (state this)
                        current-context (context this)
-                       next-props (get-paths (get-props next-props))
+                       next-props (update-props (get-props next-props))
                        next-state (get-state next-state)
                        next-context (get-context next-context)]
                    (or (not= current-props next-props)
@@ -246,6 +250,7 @@
                    (.update-subscription this context)
                    {:query-data (.get-query-data this props context)
                     :variables vars
+                    ;; TODO: want to merge this ...
                     :cambo/prop {:variables next-vars}}))
 
                (update-fragment-pointers [this props {:keys [route]} vars]
