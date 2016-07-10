@@ -368,9 +368,12 @@
                (render [this]
                  (let [{:keys [query-data cambo/variables]} (state this)
                        component-props (merge (props this)
-                                              query-data)]
-                   (js/React.createElement component (js-obj props-key component-props
-                                                             variables-key variables)))))
+                                              query-data)
+                       children (.. this -props -children)]
+                   (js/React.createElement component
+                                           (js-obj props-key component-props
+                                                   variables-key variables)
+                                           children))))
 
              container)))
 
