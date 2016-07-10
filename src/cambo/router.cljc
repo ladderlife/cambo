@@ -289,18 +289,18 @@
                 nil)))]
     (execute* {} pathsets)))
 
-(defn gets [router pathsets ctx]
+(defn gets [{:keys [route-tree]} pathsets ctx]
   (letfn [(matcher [tree pathset]
             (match tree pathset :get))
           (runner [{:keys [get]} path]
             (get path ctx))]
-    (execute router matcher runner pathsets)))
+    (execute route-tree matcher runner pathsets)))
 
 (defn get
   ([router pathsets]
    (get router pathsets {}))
-  ([{:keys [route-tree]} pathsets ctx]
-   (last (gets route-tree pathsets ctx))))
+  ([router pathsets ctx]
+   (last (gets router pathsets ctx))))
 
 (defrecord Router [route-tree])
 

@@ -1,6 +1,6 @@
-(ns com.athuey.cambo.core-test
+(ns cambo.core-test
   (:refer-clojure :exclude [get set atom ref keys range])
-  (:require [com.athuey.cambo.core :refer :all]
+  (:require [cambo.core :refer :all]
             [clojure.test :refer :all]))
 
 

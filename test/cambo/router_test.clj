@@ -1,11 +1,11 @@
-(ns com.athuey.cambo.router-test
+(ns cambo.router-test
   (:refer-clojure :exclude [get range atom ref])
-  (:require [com.athuey.cambo.router :refer :all]
-            [com.athuey.cambo.core :as core :refer [range atom ref]]
+  (:require [cambo.router :refer :all]
+            [cambo.core :as core :refer [range atom ref]]
             [clojure.test :refer :all]))
 
 (deftest route-hash-test
-         (is (= [:foo 0 :com.athuey.cambo.router/i "bar"]
+         (is (= [:foo 0 :cambo.router/i "bar"]
                 (route-hash [:foo 0 INTEGERS "bar"])))
          (is (= (route-hash [:foo 0 INTEGERS "bar"])
                 (route-hash [:foo 0 RANGES "bar"]))))
@@ -83,25 +83,25 @@
   (let [noop (fn [& _])
         video-routes {:summary (fn [f]
                                  [{:route [:videos :summary]
-                                   :get (fn [path]
+                                   :get (fn [path _]
                                           (when f (f path))
                                           [{:path [:videos :summary]
                                             :value (atom 75)}])}])}
         precedence-router (fn [on-title on-rating]
                             (router [{:route [:videos INTEGERS :title]
-                                      :get (fn [[_ ids _ :as path]]
+                                      :get (fn [[_ ids _ :as path] _]
                                              (when on-title (on-title path))
                                              (for [id ids]
                                                {:path [:videos id :title]
                                                 :value (str "title " id)}))}
                                      {:route [:videos INTEGERS :rating]
-                                      :get (fn [[_ ids _ :as path]]
+                                      :get (fn [[_ ids _ :as path] _]
                                              (when on-rating (on-rating path))
                                              (for [id ids]
                                                {:path [:videos id :rating]
                                                 :value (str "rating " id)}))}
                                      {:route [:lists KEYS INTEGERS]
-                                      :get (fn [[_ ids idxs]]
+                                      :get (fn [[_ ids idxs] _]
                                              (for [id ids
                                                    idx idxs]
                                                {:path [:lists id idx]
@@ -113,7 +113,7 @@
     (testing "should validate that optimizedPathSets strips out already found data."
       (let [calls (clojure.core/atom 0)
             router (router [{:route [:lists KEYS]
-                             :get (fn [[_ ids]]
+                             :get (fn [[_ ids] _]
                                     (for [id ids]
                                       (if (= 0 id)
                                         {:path [:lists id]
@@ -121,7 +121,7 @@
                                         {:path [:lists id]
                                          :value (ref [:lists 0])})))}
                             {:route [:two :be INTEGERS :summary]
-                             :get (fn [[_ _ ids]]
+                             :get (fn [[_ _ ids] _]
                                     (for [id ids]
                                       (do
                                         (swap! calls inc)
@@ -145,7 +145,7 @@
                        (swap! rating inc)
                        (is (= [:videos [123] :rating]
                               path))))
-            results (gets router [[:videos 123 [:title :rating]]])
+            results (gets router [[:videos 123 [:title :rating]]] {})
             result (first results)]
         (is (= 1 (count results)))
         (is (= {:videos {123 {:title (atom "title 123")
@@ -157,12 +157,12 @@
       (let [specific (clojure.core/atom 0)
             keys (clojure.core/atom 0)
             router (router [{:route [:a :specific]
-                             :get (fn [_]
+                             :get (fn [_ _]
                                     (swap! specific inc)
                                     [{:path [:a :specific]
                                       :value "hello world"}])}
                             {:route [:a KEYS]
-                             :get (fn [_]
+                             :get (fn [_ _]
                                     (swap! keys inc)
                                     [{:path [:a :specific]
                                       :value "hello world"}])}])
@@ -171,18 +171,18 @@
         (is (= 0 @keys))))
     (testing "should grab a reference."
       (let [router (precedence-router nil nil)
-            results (gets router [[:lists :abc 0]])]
+            results (gets router [[:lists :abc 0]] {})]
         (is (= 1 (count results)))
         (is (= {:lists {:abc {0 (ref [:videos 0])}}}
                (last results)))))
     (testing "should not follow references if no keys specified after path to reference"
       (let [router (router [{:route [:products-by-id KEYS KEYS]
-                             :get (fn [_] (throw (ex-info "reference followed in error" {})))}
+                             :get (fn [_ _] (throw (ex-info "reference followed in error" {})))}
                             {:route [:proffers-by-id INTEGERS :products-list RANGES]
-                             :get (fn [_] [{:path [:proffers-by-id 1 :products-list 0]
-                                            :value (ref [:products-by-id "CSC1471105X"])}
-                                           {:path [:proffers-by-id 1 :products-list 1]
-                                            :value (ref [:products-by-id "HON4033T"])}])}])]
+                             :get (fn [_ _] [{:path [:proffers-by-id 1 :products-list 0]
+                                              :value (ref [:products-by-id "CSC1471105X"])}
+                                             {:path [:proffers-by-id 1 :products-list 1]
+                                              :value (ref [:products-by-id "HON4033T"])}])}])]
         (is (= {:proffers-by-id {1 {:products-list {0 (ref [:products-by-id "CSC1471105X"])
                                                     1 (ref [:products-by-id "HON4033T"])}}}}
                (get router [[:proffers-by-id 1 :products-list (range 0 2)]])))))))
