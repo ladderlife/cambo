@@ -191,3 +191,15 @@
   (mapcat (fn [path]
             (optimize* cache cache path []))
           paths))
+
+(defn pathmap-paths
+  [pathmap]
+  (letfn [(paths [path pathmap]
+            (if (and (map? pathmap)
+                     (not (boxed? pathmap)))
+              (mapcat (fn [[key pathmap]]
+                        (paths (conj path key)
+                               pathmap))
+                      pathmap)
+              [path]))]
+    (paths [] pathmap)))

@@ -192,3 +192,17 @@
     (testing "inner reference"
       (is (thrown? Exception
                    (optimize cache [[:videos-list :inner :summary]]))))))
+
+(deftest pathmap-paths-test
+  (is (= [[:user/by-id 0 :user/name]
+          [:user/by-id 0 :user/age]
+          [:user/by-id 1 :user/name]
+          [:user/by-id 1 :user/age]]
+         (pathmap-paths {:user/by-id {0 {:user/name "Erik" :user/age 31}
+                                      1 {:user/name "Huey" :user/age 13}}})))
+  (is (= [[:user/by-id 0 :user/name]
+          [:user/by-id 0 :user/age]
+          [:user/by-id 1 :user/name]
+          [:user/by-id 1 :user/age]]
+         (pathmap-paths {:user/by-id {0 {:user/name (atom {:first "Erik" :last "Petersen"}) :user/age 31}
+                                      1 {:user/name "Huey" :user/age 13}}}))))

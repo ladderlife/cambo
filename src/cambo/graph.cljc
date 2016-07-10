@@ -61,6 +61,11 @@
               :missing []}
              pathsets))))
 
+(defn get-value
+  [graph path]
+  (let [{:keys [graph]} (get graph [path])]
+    (get-in graph path)))
+
 (defn set
   ([graph pathmaps]
    (set graph pathmaps {}))

@@ -98,22 +98,24 @@
          branch-keys)))
 
 (defn match* [tree pathset request virtual pred]
-  (cond-> []
-          (and (contains? tree ::match)
-               (pred (::match tree)))
-          (conj {:request request
+  (let [match (when (contains? tree ::match)
+                {:request request
                  :virtual virtual
                  :suffix (vec pathset)
-                 :handler (::match tree)})
+                 :handler (::match tree)})]
 
-          (seq pathset)
-          (into (mapcat (fn [[route-key virtual-key sub-tree]]
-                          (match* sub-tree
-                                  (rest pathset)
-                                  (conj request route-key)
-                                  (conj virtual virtual-key)
-                                  pred))
-                        (branches (first pathset) tree)))))
+    (cond-> []
+            (and match (pred match))
+            (conj match)
+
+            (seq pathset)
+            (into (mapcat (fn [[route-key virtual-key sub-tree]]
+                            (match* sub-tree
+                                    (rest pathset)
+                                    (conj request route-key)
+                                    (conj virtual virtual-key)
+                                    pred))
+                          (branches (first pathset) tree))))))
 
 (defn collapse-matches
   [matches]
@@ -168,6 +170,14 @@
             (seq (core/keys diff)) (conj (into [diff] path))
             (and int (seq virtual-path)) (into (map (partial into [int])
                                                     (path-difference path virtual-path))))))
+
+(defn intersects?
+  [[ks & path] [virtual & virtual-path]]
+  (let [int (intersection ks virtual)]
+    (cond
+      (empty? int) false
+      (seq path) (intersects? path virtual-path)
+      :else true)))
 
 ;; TODO: steal the falcor strip impl -- this was dumb idea & slow
 (defn strip-path [pathset routeset]
@@ -241,13 +251,13 @@
     (into [] (map conform-key routeset pathset))))
 
 (defn run
-  [pathset matches runner]
+  [cache pathset matches runner]
   (let [path-matches (executable-matches matches pathset)]
     (for [{:keys [path match]} path-matches
           :let [{:keys [handler]} match
                 {:keys [route]} handler
                 path (conform-path route path)]
-          result (runner handler path)]
+          result (runner match path cache)]
       [match result])))
 
 ;; TODO: handle more than pv
@@ -275,15 +285,15 @@
 
 (defn execute
   [router matcher runner pathsets]
-  (letfn [(match-and-run [pathset]
+  (letfn [(match-and-run [cache pathset]
             (let [matches (matcher router pathset)
-                  results (run pathset matches runner)]
+                  results (run cache pathset matches runner)]
               results))
           (execute* [cache pathsets]
             (lazy-seq
               (if (seq pathsets)
                 (let [[cache paths] (->> pathsets
-                                         (mapcat match-and-run)
+                                         (mapcat (partial match-and-run cache))
                                          (merge-results cache))]
                   (cons cache (execute* cache paths)))
                 nil)))]
@@ -291,9 +301,9 @@
 
 (defn gets [{:keys [route-tree]} pathsets ctx]
   (letfn [(matcher [tree pathset]
-            (match tree pathset :get))
-          (runner [{:keys [get]} path]
-            (get path ctx))]
+            (match tree pathset #(get-in % [:handler :get])))
+          (runner [{:keys [handler]} path _]
+            ((:get handler) path ctx))]
     (execute route-tree matcher runner pathsets)))
 
 (defn get
@@ -301,6 +311,39 @@
    (get router pathsets {}))
   ([router pathsets ctx]
    (last (gets router pathsets ctx))))
+
+(defn sets [{:keys [route-tree]} pathmaps ctx]
+  (let [{:keys [graph paths]} (graph/set {} pathmaps)
+        ;; TODO: not sure if this is necessary
+        paths (core/expand-pathsets paths)]
+    (letfn [(matcher [tree pathset]
+              (match tree pathset (fn [{:keys [handler suffix]}]
+                                    (if (seq suffix)
+                                      (:get handler)
+                                      (:set handler)))))
+            (runner [{:keys [handler suffix request virtual]} pathset cache]
+              (if (seq suffix)
+                ((:get handler) pathset ctx)
+                (let [optimized-with-path (for [path paths
+                                                :let [optimized (first (core/optimize cache [path]))]
+                                                :when (intersects? optimized virtual)]
+                                            [optimized path])
+                      set-graph (reduce (fn [set-graph [optimized path]]
+                                          (graph/set-path-value set-graph
+                                                                optimized
+                                                                (graph/get-value graph path)))
+                                        {}
+                                        optimized-with-path)
+                      pathmap (:graph (graph/get set-graph [request]))]
+                  ((:set handler) pathmap ctx))))]
+      (let [pathsets (core/collapse paths)]
+        (execute route-tree matcher runner pathsets)))))
+
+(defn set
+  ([router pathmaps]
+   (set router pathmaps {}))
+  ([router pathmaps ctx]
+   (last (sets router pathmaps ctx))))
 
 (defrecord Router [route-tree])
 

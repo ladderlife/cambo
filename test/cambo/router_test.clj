@@ -1,5 +1,5 @@
 (ns cambo.router-test
-  (:refer-clojure :exclude [get range atom ref])
+  (:refer-clojure :exclude [get set range atom ref])
   (:require [cambo.router :refer :all]
             [cambo.core :as core :refer [range atom ref]]
             [clojure.test :refer :all]))
@@ -186,3 +186,41 @@
         (is (= {:proffers-by-id {1 {:products-list {0 (ref [:products-by-id "CSC1471105X"])
                                                     1 (ref [:products-by-id "HON4033T"])}}}}
                (get router [[:proffers-by-id 1 :products-list (range 0 2)]])))))))
+
+;; TODO: copy the falcor set tests ... not 100% sold on impl working on harder examples!
+(deftest router-set-test
+  (let [users-router (fn []
+                       (let [users (clojure.core/atom {1 "Erik"
+                                                       2 "Jack"})
+                             router (router [{:route [:users RANGES]
+                                              :get (fn [[_ ranges] _]
+                                                     (let [users (vec @users)]
+                                                       (for [idx (indices ranges)
+                                                             :let [[id _] (clojure.core/get users idx)]]
+                                                         (core/path-value [:users idx]
+                                                                          (if id
+                                                                            (ref [:user/by-id id])
+                                                                            (atom))))))}
+                                             {:route [:user/by-id INTEGERS :user/name]
+                                              :set (fn [pathmap _]
+                                                     (doall (for [[id {:keys [user/name]}] (clojure.core/get pathmap :user/by-id)]
+                                                              (do (swap! users assoc id name)
+                                                                  (core/path-value [:user/by-id id :user/name]
+                                                                                   name)))))}])]
+                         [users router]))]
+    (testing "can set path without a ref"
+      (let [[users router] (users-router)
+            result (set router [{:user/by-id {1 {:user/name "Huey"}}}])]
+        (is (= "Huey"
+               (clojure.core/get @users 1)))
+        (is (= {:user/by-id {1 {:user/name (atom "Huey")}}}
+               result))))
+    (testing "can set path with a ref"
+      (let [[users router] (users-router)
+            result (set router [{:users {0 {:user/name "Huey"
+                                            :user/age 13}}}])]
+        (is (= "Huey"
+               (clojure.core/get @users 1)))
+        (is (= {:users {0 (ref [:user/by-id 1])}
+                :user/by-id {1 {:user/name (atom "Huey")}}}
+               result))))))
