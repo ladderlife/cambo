@@ -35,13 +35,24 @@
 (def quote-details (comp/factory QuoteDetails))
 
 (defcontainer UserQuote
-              {:fragments {:user (fn [_]
+              {:initial-variables {:todo-count 1}
+               :fragments {:user (fn [{:keys [todo-count]}]
+                                   (println "todo-count" todo-count)
                                    [:user/name
                                     :user/age
                                     :user/gender
                                     (get-fragment QuoteDetails :user)
+                                    {:user/todos [{(core/range 0 todo-count) [:todo/text]}]}
                                     {:user/quote [(get-fragment QuoteDetails :quote)]}])}
                :component (component
+                            (componentDidMount [this]
+                                               (set! (.-timeout this)
+                                                     (js/setTimeout (fn []
+                                                                      (comp/set-variables this {:todo-count 3}))
+                                                                    3000)))
+                            (componentWillUnmount [this]
+                                                  (when-let [timeout (.-timeout this)]
+                                                    (js/clearTimeout timeout)))
                             (render [this]
                                     (let [{:keys [user]} (props this)
                                           quote (get-in user [:user/quote])]
@@ -57,13 +68,19 @@
                                {:user/by-id {1 {:user/name   "Huey"
                                                 :user/age    13
                                                 :user/gender :gender/male
-                                                :user/quote  (core/ref [:quote/by-id 13])}}}
+                                                :user/quote  (core/ref [:quote/by-id 13])
+                                                :user/todos {0 (core/ref [:todo/by-id 1])
+                                                             1 (core/ref [:todo/by-id 2])
+                                                             2 (core/ref [:todo/by-id 3])}}}}
                                {:quote/by-id {13 {:quote/term 10
                                                   :quote/policy 250000
                                                   :quote/monthly-premium 13.52
                                                   :quote/carrier (core/ref [:carrier/by-code :lddr])}}}
                                {:carrier/by-code {:lddr {:carrier/name "Ladder"
-                                                         :carrier/description "11 badasses"}}}])
+                                                         :carrier/description "11 badasses"}}}
+                               {:todo/by-id {1 {:todo/text "buy a unicorn"}
+                                             2 {:todo/text "learn an clojurescript"}
+                                             3 {:todo/text "pokemon go"}}}])
                 :graph
                 (graph/as-datasource)))
 
@@ -74,10 +91,6 @@
                   :container UserQuote
                   :model model})
   (.getElementById js/document "app"))
-
-(defonce subscription (let [cb (fn []
-                                 (println "cache changed"))]
-                        (model/subscribe model nil cb)))
 
 (defonce interval (js/setInterval
            (fn []

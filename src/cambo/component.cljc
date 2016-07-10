@@ -151,10 +151,10 @@
   vars)
 
 (defn get-container-fragment
-  [fragments name vars route]
+  [fragments name vars]
   (when-let [fragment (get fragments name)]
     (let [query (if (fn? fragment)
-                  (fragment vars route)
+                  (fragment vars)
                   fragment)
           pathsets (pull query)]
       (Fragment. pathsets))))
@@ -200,17 +200,48 @@
              (.update sub model pathsets)
              sub)))
 
+(defn create-fragment-pointers
+  [fragments props vars]
+  (into {} (for [name (keys fragments)
+                 :let [root (get-path props name)]
+                 :when root
+                 :let [fragment (get-container-fragment fragments name vars)
+                       pathsets (local-query root fragment)]]
+             [name {:root root
+                    :pathsets pathsets}])))
+
+(defn variables
+  [this]
+  (get-in (props this) [:cambo/prop :variables]))
+
+(defn set-variables
+  ([this variables]
+   (set-variables this variables nil))
+  ([this variables cb]
+   (let [run (get-in (props this) [:cambo/prop :run])]
+     (run variables cb false))))
+
+(defn force-fetch
+  ([this]
+   (force-fetch this nil nil))
+  ([this variables]
+   (force-fetch this variables nil))
+  ([this variables cb]
+   (let [run (get-in (props this) [:cambo/prop :run])]
+     (run variables cb true))))
+
 #?(:cljs (defn create-container
            [component {:keys [initial-variables prepare-variables fragments]
                        :or {initial-variables {} prepare-variables default-prepare-variables}}]
            (let [container (fn container []
                              (this-as this
                                (.apply js/React.Component this (js-arguments))
+                               (set! (.-pending this) nil)
                                (set! (.-mounted this) true)
                                (set! (.-state this) (->state {:query-data nil
                                                               :variables nil
-                                                              ;; TODO: add set-variables functionality
-                                                              :cambo/prop {}}))
+                                                              :cambo/prop {:run (fn [variables cb force?]
+                                                                                  (.run-variables this variables cb force?))}}))
                                this))]
              (set! (.-prototype container)
                    (goog.object/clone js/React.Component.prototype))
@@ -223,48 +254,46 @@
                  (into #{} (keys fragments)))
                (fragment [_ name]
                  ;; TODO: figure out how routes work for external `get-fragment` calls -- it is not nil in relay
-                 (get-container-fragment fragments name (prepare-variables initial-variables) nil)))
+                 (get-container-fragment fragments name (prepare-variables initial-variables nil))))
 
              (specify! (.-prototype container)
                Object
-               (shouldComponentUpdate [this next-props next-state next-context]
-                 (if (not= (.-children next-props)
-                           (.. this .-props .-children))
-                   false
-                   (let [update-props (fn [props]
-                                        (reduce (fn [props key]
-                                                  (let [path (get-path props key)]
-                                                    (assoc props key path)))
-                                                props
-                                                (keys fragments)))
-                         current-props (update-props (props this))
-                         current-state (state this)
-                         current-context (context this)
-                         next-props (update-props (get-props next-props))
-                         next-state (get-state next-state)
-                         next-context (get-context next-context)]
-                     (or (not= current-props next-props)
-                         (not= current-state next-state)
-                         (not= current-context next-context)))))
 
-               (initialize [this props {:keys [route] :as context} vars]
+               (run-variables [this partial-vars cb force?]
+                 (let [{:keys [route model]} (context this)
+                       {:keys [variables]} (state this)
+                       variables (get (.-pending this) :variables variables)
+                       variables (merge variables partial-vars)
+                       next-variables (prepare-variables variables route)
+                       pointers (create-fragment-pointers fragments (props this) next-variables)
+                       pathsets (into [] (mapcat :pathsets (vals pointers)))
+                       on-readystate (fn [ready]
+                                       (when ready
+                                         (set! (.-pending this) nil)
+                                         (set! (.-fragment-pointers this) pointers)
+                                         (.update-subscription this (context this))
+                                         (when (.-mounted this)
+                                           (set-state this (fn [{:keys [cambo/prop]}]
+                                                             {:query-data (.get-query-data this (props this) (context this))
+                                                              :variables variables
+                                                              :cambo/prop (assoc prop :variables next-variables)}))))
+                                       (when cb
+                                         (cb ready)))]
+                   (if force?
+                     (model/force model pathsets on-readystate)
+                     (model/prime model pathsets on-readystate))
+                   (set! (.-pending this) {:variables variables})))
+
+               (initialize [this {:keys [cambo/prop]} props {:keys [route] :as context} vars]
                  (let [next-vars (prepare-variables vars route)]
-                   (.update-fragment-pointers this props context next-vars)
+                   (.update-fragment-pointers this props next-vars)
                    (.update-subscription this context)
                    {:query-data (.get-query-data this props context)
                     :variables vars
-                    ;; TODO: want to merge this ...
-                    :cambo/prop {:variables next-vars}}))
+                    :cambo/prop (assoc prop :variables next-vars)}))
 
-               (update-fragment-pointers [this props {:keys [route]} vars]
-                 (let [pointers (for [name (keys fragments)
-                                      :let [root (get-path props name)]
-                                      :when root
-                                      :let [fragment (get-container-fragment fragments name vars route)
-                                            pathsets (local-query root fragment)]]
-                                  [name {:root root
-                                         :pathsets pathsets}])]
-                   (set! (.-fragment-pointers this) pointers)))
+               (update-fragment-pointers [this props vars]
+                 (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars)))
 
                (update-subscription [this {:keys [model]}]
                  (let [pointers (.-fragment-pointers this)
@@ -292,20 +321,43 @@
 
                (componentWillMount [this]
                  (when-not (mock? this)
-                   (set-state this (.initialize this (props this) (context this) initial-variables))))
+                   (set-state this (fn [state]
+                                     (.initialize this state (props this) (context this) initial-variables)))))
 
                (componentWillReceiveProps [this next-props next-context]
                  (when-not (mock? this)
-                   (set-state this (.initialize this (get-props next-props) (get-context next-context) (:variables (state this))))))
+                   (set-state this (fn [{:keys [variables] :as state}]
+                                     (.initialize this state (get-props next-props) (get-context next-context) variables)))))
 
                (componentWillUnmount [this]
                  (set! (.-mounted this) false)
                  (when-let [sub (.-subscription this)]
                    (dispose sub)))
 
+               (shouldComponentUpdate [this next-props next-state next-context]
+                 (if (not= (.-children next-props)
+                           (.. this -props -children))
+                   false
+                   (let [update-props (fn [props]
+                                        (reduce (fn [props key]
+                                                  (let [path (get-path props key)]
+                                                    (assoc props key path)))
+                                                props
+                                                (keys fragments)))
+                         current-props (update-props (props this))
+                         current-state (state this)
+                         current-context (context this)
+                         next-props (update-props (get-props next-props))
+                         next-state (get-state next-state)
+                         next-context (get-context next-context)]
+                     (or (not= current-props next-props)
+                         (not= current-state next-state)
+                         (not= current-context next-context)))))
+
                (render [this]
-                 (let [{:keys [query-data]} (state this)
+                 (let [{:keys [query-data cambo/prop]} (state this)
                        component-props (merge (props this)
+                                              {:cambo/prop prop}
                                               query-data)]
                    (js/React.createElement component (->props component-props)))))
 
