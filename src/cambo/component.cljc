@@ -210,15 +210,25 @@
              [name {:root root
                     :pathsets pathsets}])))
 
+(def variables-key "cambo$variables")
+
+(defn get-variables
+  [props]
+  (aget props variables-key))
+
+(defn variables*
+  [this]
+  (get-variables (.-props this)))
+
 (defn variables
   [this]
-  (get-in (props this) [:cambo/prop :variables]))
+  (get (variables* this) :variables))
 
 (defn set-variables
   ([this variables]
    (set-variables this variables nil))
   ([this variables cb]
-   (let [run (get-in (props this) [:cambo/prop :run])]
+   (let [{:keys [run]} (variables* this)]
      (run variables cb false))))
 
 (defn force-fetch
@@ -227,7 +237,7 @@
   ([this variables]
    (force-fetch this variables nil))
   ([this variables cb]
-   (let [run (get-in (props this) [:cambo/prop :run])]
+   (let [{:keys [run]} (variables* this)]
      (run variables cb true))))
 
 #?(:cljs (defn create-container
@@ -238,10 +248,11 @@
                                (.apply js/React.Component this (js-arguments))
                                (set! (.-pending this) nil)
                                (set! (.-mounted this) true)
-                               (set! (.-state this) (->state {:query-data nil
-                                                              :variables nil
-                                                              :cambo/prop {:run (fn [variables cb force?]
-                                                                                  (.run-variables this variables cb force?))}}))
+                               (set! (.-state this)
+                                     (->state {:query-data nil
+                                               :variables nil
+                                               :cambo/variables {:run (fn [variables cb force?]
+                                                                        (.run-variables this variables cb force?))}}))
                                this))]
              (set! (.-prototype container)
                    (goog.object/clone js/React.Component.prototype))
@@ -276,7 +287,7 @@
                                            (set-state this (fn [{:keys [cambo/prop]}]
                                                              {:query-data (.get-query-data this (props this) (context this))
                                                               :variables variables
-                                                              :cambo/prop (assoc prop :variables next-variables)}))))
+                                                              :cambo/variables (assoc prop :variables next-variables)}))))
                                        (when cb
                                          (cb ready)))]
                    (if force?
@@ -284,13 +295,13 @@
                      (model/prime model pathsets on-readystate))
                    (set! (.-pending this) {:variables variables})))
 
-               (initialize [this {:keys [cambo/prop]} props {:keys [route] :as context} vars]
+               (initialize [this {:keys [cambo/variables]} props {:keys [route] :as context} vars]
                  (let [next-vars (prepare-variables vars route)]
                    (.update-fragment-pointers this props next-vars)
                    (.update-subscription this context)
                    {:query-data (.get-query-data this props context)
                     :variables vars
-                    :cambo/prop (assoc prop :variables next-vars)}))
+                    :cambo/variables (assoc variables :variables next-vars)}))
 
                (update-fragment-pointers [this props vars]
                  (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars)))
@@ -355,11 +366,11 @@
                          (not= current-context next-context)))))
 
                (render [this]
-                 (let [{:keys [query-data cambo/prop]} (state this)
+                 (let [{:keys [query-data cambo/variables]} (state this)
                        component-props (merge (props this)
-                                              {:cambo/prop prop}
                                               query-data)]
-                   (js/React.createElement component (->props component-props)))))
+                   (js/React.createElement component (js-obj props-key component-props
+                                                             variables-key variables)))))
 
              container)))
 
