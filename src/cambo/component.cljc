@@ -284,10 +284,10 @@
                                          (set! (.-fragment-pointers this) pointers)
                                          (.update-subscription this (context this))
                                          (when (.-mounted this)
-                                           (set-state this (fn [{:keys [cambo/prop]}]
+                                           (set-state this (fn [{:keys [cambo/variables]}]
                                                              {:query-data (.get-query-data this (props this) (context this))
                                                               :variables variables
-                                                              :cambo/variables (assoc prop :variables next-variables)}))))
+                                                              :cambo/variables (assoc variables :variables next-variables)}))))
                                        (when cb
                                          (cb ready)))]
                    (if force?
