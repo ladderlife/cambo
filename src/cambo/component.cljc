@@ -228,21 +228,24 @@
              (specify! (.-prototype container)
                Object
                (shouldComponentUpdate [this next-props next-state next-context]
-                 (let [update-props (fn [props]
-                                      (reduce (fn [props key]
-                                                (let [path (get-path props key)]
-                                                  (assoc props key path)))
-                                              props
-                                              (keys fragments)))
-                       current-props (update-props (props this))
-                       current-state (state this)
-                       current-context (context this)
-                       next-props (update-props (get-props next-props))
-                       next-state (get-state next-state)
-                       next-context (get-context next-context)]
-                   (or (not= current-props next-props)
-                       (not= current-state next-state)
-                       (not= current-context next-context))))
+                 (if (not= (.-children next-props)
+                           (.. this .-props .-children))
+                   false
+                   (let [update-props (fn [props]
+                                        (reduce (fn [props key]
+                                                  (let [path (get-path props key)]
+                                                    (assoc props key path)))
+                                                props
+                                                (keys fragments)))
+                         current-props (update-props (props this))
+                         current-state (state this)
+                         current-context (context this)
+                         next-props (update-props (get-props next-props))
+                         next-state (get-state next-state)
+                         next-context (get-context next-context)]
+                     (or (not= current-props next-props)
+                         (not= current-state next-state)
+                         (not= current-context next-context)))))
 
                (initialize [this props {:keys [route] :as context} vars]
                  (let [next-vars (prepare-variables vars route)]
