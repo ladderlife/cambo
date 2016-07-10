@@ -40,7 +40,8 @@
   nil)
 
 (def subscriber-id (atom 0))
-(defn subscribe [{:keys [subscribers] :as model} cb]
+
+(defn subscribe [{:keys [subscribers] :as model} pathsets cb]
   (let [id (swap! subscriber-id inc)]
     (swap! subscribers assoc id cb)
     (fn []

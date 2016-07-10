@@ -19,13 +19,12 @@
 (def h1 (tag "h1"))
 
 (defcontainer QuoteDetails
-              {:fragments (fn [_]
-                            {:quote [:quote/term
-                                     :quote/policy
-                                     :quote/monthly-premium
-                                     {:quote/carrier [:carrier/name
-                                                      :carrier/description]}]
-                             :user  [:user/name]})
+              {:fragments {:quote [:quote/term
+                                   :quote/policy
+                                   :quote/monthly-premium
+                                   {:quote/carrier [:carrier/name
+                                                    :carrier/description]}]
+                           :user  [:user/name]}
                :component (component
                             (render [this]
                                     (div nil
@@ -36,12 +35,12 @@
 (def quote-details (comp/factory QuoteDetails))
 
 (defcontainer UserQuote
-              {:fragments (fn [_]
-                            {:user [:user/name
+              {:fragments {:user (fn [_]
+                                   [:user/name
                                     :user/age
                                     :user/gender
                                     (get-fragment QuoteDetails :user)
-                                    {:user/quote [(get-fragment QuoteDetails :quote)]}]})
+                                    {:user/quote [(get-fragment QuoteDetails :quote)]}])}
                :component (component
                             (render [this]
                                     (let [{:keys [user]} (props this)
@@ -78,7 +77,7 @@
 
 (defonce subscription (let [cb (fn []
                                  (println "cache changed"))]
-                        (model/subscribe model cb)))
+                        (model/subscribe model nil cb)))
 
 (defonce interval (js/setInterval
            (fn []

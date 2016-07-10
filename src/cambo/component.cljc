@@ -60,7 +60,8 @@
   (get-context (.-context comp)))
 
 (defprotocol IFragments
-  (fragments [this]))
+  (fragment-names [this])
+  (fragment [this name]))
 
 (deftype Fragment [pathsets])
 
@@ -77,11 +78,7 @@
             (seq leafs) (conj [leafs]))))
 
 (defn get-fragment [comp name]
-  (Fragment. (pull (get (fragments comp) name))))
-
-(defn get-fragments [comp]
-  (into {} (for [[name fragment] (fragments comp)]
-             [name (Fragment. (pull fragment))])))
+  (fragment comp name))
 
 (defn expand-fragment
   [fragment]
@@ -134,19 +131,78 @@
                               (if (empty? keys)
                                 path
                                 (conj path keys))))))]
-    (for [pathset (.-pathsets fragment)
-          :let [pathset (stub-fragments pathset)]]
-      (into root pathset))))
+    (into [] (for [pathset (.-pathsets fragment)
+                   :let [pathset (stub-fragments pathset)]]
+               (into root pathset)))))
 
 (defn query-pathsets [queries container]
-  (into [] (for [[name fragment] (get-fragments container)
-                 :let [query (get queries name)]
-                 pathset (expand-fragment fragment)]
+  (into [] (for [name (fragment-names container)
+                 :let [fragment (get-fragment container name)
+                       query (get queries name)
+                       pathsets (expand-fragment fragment)]
+                 pathset pathsets]
              (into query pathset))))
+
+(defn mock?
+  [_]
+  false)
+
+(defn default-prepare-variables [vars _]
+  vars)
+
+(defn get-container-fragment
+  [fragments name vars route]
+  (when-let [fragment (get fragments name)]
+    (let [query (if (fn? fragment)
+                  (fragment vars route)
+                  fragment)
+          pathsets (pull query)]
+      (Fragment. pathsets))))
+
+(defn get-path
+  [props name]
+  (get-in props [name :cambo/path]))
+
+(defprotocol IDisposable
+  (dispose [this]))
+
+#?(:cljs (deftype ContainerSubscription
+           [cb]
+           IDisposable
+           (dispose [this]
+             (.unsubscribe this)
+             nil)
+
+           Object
+           (update [this model pathsets]
+             (let [current-model (.-model this)
+                   current-pathsets (.-pathsets this)]
+               (when (or (not= model current-model)
+                         (not= pathsets current-pathsets))
+                 (.unsubscribe this)
+                 (set! (.-model this) model)
+                 (set! (.-pathsets this) pathsets)
+                 (.subscribe this)))
+             this)
+           (subscribe [this]
+             (let [model (.-model this)
+                   pathsets (.-pathsets this)
+                   sub (model/subscribe model pathsets cb)]
+               (set! (.-sub this) sub))
+             this)
+           (unsubscribe [this]
+             (when-let [sub (.-sub this)]
+               (sub))
+             this)))
+
+#?(:cljs (defn container-subscription [model pathsets cb]
+           (let [sub (ContainerSubscription. cb)]
+             (.update sub model pathsets)
+             sub)))
 
 #?(:cljs (defn create-container
            [component {:keys [initial-variables prepare-variables fragments]
-                       :or {initial-variables {} prepare-variables identity}}]
+                       :or {initial-variables {} prepare-variables default-prepare-variables}}]
            (let [container (fn container []
                              (this-as this
                                ;; TODO: state!
@@ -160,13 +216,17 @@
 
              (specify! container
                IFragments
-               (fragments [_]
-                 (fragments nil)))
+               (fragment-names [_]
+                 (into #{} (keys fragments)))
+               (fragment [_ name]
+                 ;; TODO: figure out how routes work for external `get-fragment` calls -- it is not nil in relay
+                 (get-container-fragment fragments name (prepare-variables initial-variables) nil)))
 
              (specify! (.-prototype container)
                Object
                (shouldComponentUpdate [this next-props next-state next-context]
                  ;; TODO: only care about the path of fragment props, other props deep compare
+                 ;; TODO: how do children apply here?
                  (let [get-paths (fn [props]
                                    (into {} (for [[k {:keys [cambo/path] :as v}] props]
                                               [k (if path path v)])))
@@ -179,48 +239,68 @@
                    (or (not= current-props next-props)
                        (not= current-state next-state)
                        (not= current-context next-context))))
-               (initialize [this]
-                 )
+
+               (initialize [this props {:keys [route] :as context} vars]
+                 (let [next-vars (prepare-variables vars route)]
+                   (.update-fragment-pointers this props context next-vars)
+                   (.update-subscription this context)
+                   {:query-data (.get-query-data this props context)
+                    :variables vars
+                    :cambo/prop {:variables next-vars}}))
+
+               (update-fragment-pointers [this props {:keys [route]} vars]
+                 (let [pointers (for [name (keys fragments)
+                                      :let [root (get-path props name)]
+                                      :when root
+                                      :let [fragment (get-container-fragment fragments name vars route)
+                                            pathsets (local-query root fragment)]]
+                                  [name {:root root
+                                         :pathsets pathsets}])]
+                   (set! (.-fragment-pointers this) pointers)))
+
+               (update-subscription [this {:keys [model]}]
+                 (let [pointers (.-fragment-pointers this)
+                       pathsets (into [] (mapcat :pathsets (vals pointers)))
+                       subscription (if-let [subscription (.-subscription this)]
+                                      (.update subscription model pathsets)
+                                      (container-subscription model pathsets (fn []
+                                                                               (.handle-fragment-data-update this))))]
+                   (set! (.-subscription this) subscription)))
+
+               (get-query-data [this props {:keys [model]}]
+                 (let [pointers (.-fragment-pointers this)
+                       pathsets (mapcat :pathsets (vals pointers))
+                       graph (-> model model/with-path-info (model/get-cache pathsets))
+                       query-data (into {} (map (fn [[name {:keys [root]}]]
+                                                     ;; how would this happen?
+                                                     ;:when (get props name)
+                                                  [name (get-in graph root)])
+                                                pointers))]
+                   query-data))
+
+               (handle-fragment-data-update [this]
+                 (when (.-mounted this)
+                   (set-state this {:query-data (.get-query-data this (props this) (context this))})))
+
                (componentWillMount [this]
-                 ;; TODO: initialize
-                 (let [{:keys [model]} (context this)
-                       pathsets (->> (fragments nil)
-                                     (mapcat (fn [[name fragment]]
-                                               (let [fragment (Fragment. (pull fragment))
-                                                     root (get-in (props this) [name :cambo/path])]
-                                                 (local-query root fragment))))
-                                     (into []))
-                       query-data (-> model model/with-path-info (model/get-cache pathsets))
-                       subscription (model/subscribe model (fn []
-                                                             (let [query-data (-> model model/with-path-info (model/get-cache pathsets))]
-                                                               (set-state this {:query-data query-data}))))]
-                   (set-state this {:query-data query-data
-                                    :subscription subscription})))
+                 (when-not (mock? this)
+                   (set-state this (.initialize this (props this) (context this) initial-variables))))
+
                (componentWillReceiveProps [this next-props next-context]
-                 ;; TODO: initialize
-                 )
+                 (when-not (mock? this)
+                   (set-state this (.initialize this (get-props next-props) (get-context next-context) (:variables (state this))))))
+
                (componentWillUnmount [this]
                  (set! (.-mounted this) false)
-                 (let [{:keys [subscription]} (state this)]
-                   (when subscription (subscription))))
-               ;; fns ....
-               ;; - _createQuerySetAndFragmentPointers
-               ;; - _runVariables
-               ;; - _initialize
-               ;; - _cleanup
-               ;; - _updateFragmentResolvers
-               ;; - _handleFragmentDataUpdate
-               ;; - _updateFragmentPointers
-               ;; - _getQueryData
-               ;; -
+                 (when-let [sub (.-subscription this)]
+                   (dispose sub)))
+
                (render [this]
-                 (let [query-data (-> this state :query-data)
-                       fragment-names (keys (fragments nil))
-                       component-props (into {} (for [[name {:keys [cambo/path]}] (select-keys (props this) fragment-names)]
-                                                  [name (get-in query-data path)]))
+                 (let [{:keys [query-data]} (state this)
                        component-props (merge (props this)
-                                              component-props)]
+                                              query-data)]
                    (js/React.createElement component (->props component-props)))))
+
              container)))
 
 #?(:cljs (do
