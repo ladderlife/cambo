@@ -43,6 +43,14 @@
 (defn path-value [path value]
   (PathValue. path value))
 
+(defn path-value? [x]
+  (or (instance? PathValue x)
+      ;; allow a {:path :value} map for now
+      ;; downside is pathmap will need to *NOT* match this case
+      (and (map? x)
+           (= #{:path :value}
+              (into #{} (clojure.core/keys x))))))
+
 ;; TODO:
 ;; - pathmap
 ;; - pathvalue

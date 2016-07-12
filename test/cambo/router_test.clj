@@ -1,7 +1,7 @@
 (ns cambo.router-test
   (:refer-clojure :exclude [get set range atom ref])
   (:require [cambo.router :refer :all]
-            [cambo.core :as core :refer [range atom ref]]
+            [cambo.core :as core :refer [path-value range atom ref]]
             [clojure.test :refer :all]))
 
 (deftest route-hash-test
@@ -85,27 +85,23 @@
                                  [{:route [:videos :summary]
                                    :get (fn [path _]
                                           (when f (f path))
-                                          [{:path [:videos :summary]
-                                            :value (atom 75)}])}])}
+                                          [(path-value [:videos :summary] (atom 75))])}])}
         precedence-router (fn [on-title on-rating]
                             (router [{:route [:videos INTEGERS :title]
                                       :get (fn [[_ ids _ :as path] _]
                                              (when on-title (on-title path))
                                              (for [id ids]
-                                               {:path [:videos id :title]
-                                                :value (str "title " id)}))}
+                                               (path-value [:videos id :title] (str "title " id))))}
                                      {:route [:videos INTEGERS :rating]
                                       :get (fn [[_ ids _ :as path] _]
                                              (when on-rating (on-rating path))
                                              (for [id ids]
-                                               {:path [:videos id :rating]
-                                                :value (str "rating " id)}))}
+                                               (path-value [:videos id :rating] (str "rating " id))))}
                                      {:route [:lists KEYS INTEGERS]
                                       :get (fn [[_ ids idxs] _]
                                              (for [id ids
                                                    idx idxs]
-                                               {:path [:lists id idx]
-                                                :value (ref [:videos idx])}))}]))]
+                                               (path-value [:lists id idx] (ref [:videos idx]))))}]))]
     (testing "simple route"
       (let [router (router ((video-routes :summary) noop))]
         (is (= {:videos {:summary (atom 75)}}
@@ -116,17 +112,14 @@
                              :get (fn [[_ ids] _]
                                     (for [id ids]
                                       (if (= 0 id)
-                                        {:path [:lists id]
-                                         :value (ref [:two :be 956])}
-                                        {:path [:lists id]
-                                         :value (ref [:lists 0])})))}
+                                        {:path [:lists id] :value (ref [:two :be 956])}
+                                        {:path [:lists id] :value (ref [:lists 0])})))}
                             {:route [:two :be INTEGERS :summary]
                              :get (fn [[_ _ ids] _]
                                     (for [id ids]
                                       (do
                                         (swap! calls inc)
-                                        {:path [:two :be id :summary]
-                                         :value "hello world"})))}])
+                                        (path-value [:two :be id :summary] "hello world"))))}])
             result (get router [[:lists [0 1] :summary]])]
         (is (= {:lists {0 (ref [:two :be 956])
                         1 (ref [:lists 0])}
@@ -159,13 +152,11 @@
             router (router [{:route [:a :specific]
                              :get (fn [_ _]
                                     (swap! specific inc)
-                                    [{:path [:a :specific]
-                                      :value "hello world"}])}
+                                    [(path-value [:a :specific] "hello world")])}
                             {:route [:a KEYS]
                              :get (fn [_ _]
                                     (swap! keys inc)
-                                    [{:path [:a :specific]
-                                      :value "hello world"}])}])
+                                    [(path-value [:a :specific] "hello world")])}])
             _ (get router [[:a :specific]])]
         (is (= 1 @specific))
         (is (= 0 @keys))))
@@ -179,10 +170,10 @@
       (let [router (router [{:route [:products-by-id KEYS KEYS]
                              :get (fn [_ _] (throw (ex-info "reference followed in error" {})))}
                             {:route [:proffers-by-id INTEGERS :products-list RANGES]
-                             :get (fn [_ _] [{:path [:proffers-by-id 1 :products-list 0]
-                                              :value (ref [:products-by-id "CSC1471105X"])}
-                                             {:path [:proffers-by-id 1 :products-list 1]
-                                              :value (ref [:products-by-id "HON4033T"])}])}])]
+                             :get (fn [_ _] [(path-value [:proffers-by-id 1 :products-list 0]
+                                                         (ref [:products-by-id "CSC1471105X"]))
+                                             (path-value [:proffers-by-id 1 :products-list 1]
+                                                         (ref [:products-by-id "HON4033T"]))])}])]
         (is (= {:proffers-by-id {1 {:products-list {0 (ref [:products-by-id "CSC1471105X"])
                                                     1 (ref [:products-by-id "HON4033T"])}}}}
                (get router [[:proffers-by-id 1 :products-list (range 0 2)]])))))))

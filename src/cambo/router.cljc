@@ -263,21 +263,23 @@
 ;; TODO: handle more than pv
 ;; TODO: don't optimize stuff here -- do it only merge-results
 
+(defn merge-path-value
+  [cache {:keys [suffix]} {:keys [value path] :as pv}]
+  (let [cache (graph/set-path-value cache pv)]
+    [cache (if (and (core/ref? value) (seq suffix))
+             [(into (:path value) suffix)]
+             [])]))
+
 (defn merge-result
-  [cache result]
-  (let [[{:keys [suffix]} {:keys [value] :as pv}] result]
-    (let [cache (graph/set-path-value cache pv)
-          paths (when (and (core/ref? value) (seq suffix))
-                  (->> [(into (:path value) suffix)]
-                       (core/optimize cache)
-                       core/collapse))]
-      [cache paths])))
+  [cache match value]
+  (cond
+    (core/path-value? value) (merge-path-value cache match value)))
 
 (defn merge-results
   [cache results]
   (loop [cache cache paths [] results results]
-    (if-let [result (first results)]
-      (let [[cache new-paths] (merge-result cache result)]
+    (if-let [[match value] (first results)]
+      (let [[cache new-paths] (merge-result cache match value)]
         (recur cache (into paths new-paths) (rest results)))
       [cache (->> paths
                   (core/optimize cache)
