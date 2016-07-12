@@ -51,6 +51,10 @@
            (= #{:path :value}
               (into #{} (clojure.core/keys x))))))
 
+(defn pathmap? [x]
+  (and (map? x)
+       (not (path-value? x))))
+
 ;; TODO:
 ;; - pathmap
 ;; - pathvalue
@@ -211,3 +215,18 @@
                       pathmap)
               [path]))]
     (paths [] pathmap)))
+
+(defn branch? [x]
+  (and (map? x)
+       (not (boxed? x))))
+
+(defn pathmap-values
+  [pathmap]
+  (letfn [(path-values [path pathmap]
+            (if (branch? pathmap)
+              (mapcat (fn [[key pathmap]]
+                        (path-values (conj path key)
+                                     pathmap))
+                      pathmap)
+              [(path-value path pathmap)]))]
+    (path-values [] pathmap)))

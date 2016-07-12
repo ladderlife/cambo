@@ -256,24 +256,30 @@
     (for [{:keys [path match]} path-matches
           :let [{:keys [handler]} match
                 {:keys [route]} handler
-                path (conform-path route path)]
-          result (runner match path cache)]
-      [match result])))
-
-;; TODO: handle more than pv
-;; TODO: don't optimize stuff here -- do it only merge-results
+                path (conform-path route path)]]
+      [match (runner match path cache)])))
 
 (defn merge-path-value
-  [cache {:keys [suffix]} {:keys [value path] :as pv}]
+  [cache {:keys [suffix]} {:keys [value] :as pv}]
   (let [cache (graph/set-path-value cache pv)]
     [cache (if (and (core/ref? value) (seq suffix))
              [(into (:path value) suffix)]
              [])]))
 
+(defn merge-pathmap
+  [cache match pathmap]
+  (let [pvs (core/pathmap-values pathmap)]
+    (reduce (fn [[cache paths] pv]
+              (let [[cache add-paths] (merge-path-value cache match pv)]
+                [cache (into paths add-paths)]))
+            [cache []]
+            pvs)))
+
 (defn merge-result
   [cache match value]
   (cond
-    (core/path-value? value) (merge-path-value cache match value)))
+    (core/path-value? value) (merge-path-value cache match value)
+    (core/pathmap? value) (merge-pathmap cache match value)))
 
 (defn merge-results
   [cache results]
@@ -294,9 +300,13 @@
           (execute* [cache pathsets]
             (lazy-seq
               (if (seq pathsets)
-                (let [[cache paths] (->> pathsets
-                                         (mapcat (partial match-and-run cache))
-                                         (merge-results cache))]
+                (let [results (mapcat (partial match-and-run cache) pathsets)
+                      ;; expanding values -> value will be impl dependant
+                      ;; here it is just a seq or single value
+                      results (for [[match values] results
+                                    value values]
+                                [match value])
+                      [cache paths] (merge-results cache results)]
                   (cons cache (execute* cache paths)))
                 nil)))]
     (execute* {} pathsets)))

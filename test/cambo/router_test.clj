@@ -225,10 +225,8 @@
                                                       (let [user-id 7
                                                             count (count @users)]
                                                         (swap! users assoc user-id name)
-                                                        [(core/path-value [:users count]
-                                                                          (ref [:users/by-id user-id]))
-                                                         (core/path-value [:users/by-id user-id :user/name]
-                                                                          name)]))}])]
+                                                        {:users {count (ref [:users/by-id user-id])}
+                                                         :users/by-id {user-id {:user/name name}}}))}])]
                          [users router]))]
     (testing "can call a mutation"
       (let [[users router] (users-router)

@@ -206,3 +206,20 @@
           [:user/by-id 1 :user/age]]
          (pathmap-paths {:user/by-id {0 {:user/name (atom {:first "Erik" :last "Petersen"}) :user/age 31}
                                       1 {:user/name "Huey" :user/age 13}}}))))
+
+(deftest pathmap-path-values-test
+  (is (= [(path-value [:user/by-id 0 :user/name] "Erik")
+          (path-value [:user/by-id 0 :user/age] 31)
+          (path-value [:user/by-id 1 :user/name] "Huey")
+          (path-value [:user/by-id 1 :user/age] 13)]
+         (pathmap-values {:user/by-id {0 {:user/name "Erik" :user/age 31}
+                                       1 {:user/name "Huey" :user/age 13}}})))
+  (is (= [(path-value [:user/by-id 0 :user/name] (atom {:first "Erik" :last "Petersen"}))
+          (path-value [:user/by-id 0 :user/age] 31)
+          (path-value [:user/by-id 0 :user/friend] (ref [:user/by-id 1]))
+          (path-value [:user/by-id 1 :user/name] "Huey")
+          (path-value [:user/by-id 1 :user/age] 13)]
+         (pathmap-values {:user/by-id {0 {:user/name (atom {:first "Erik" :last "Petersen"})
+                                          :user/age 31
+                                          :user/friend (ref [:user/by-id 1])}
+                                       1 {:user/name "Huey" :user/age 13}}}))))
