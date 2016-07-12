@@ -224,3 +224,26 @@
         (is (= {:users {0 (ref [:user/by-id 1])}
                 :user/by-id {1 {:user/name (atom "Huey")}}}
                result))))))
+
+(deftest router-call-test
+  (let [users-router (fn []
+                       (let [users (clojure.core/atom {1 "Erik"
+                                                       2 "Jack"})
+                             router (router [{:route [:users :add]
+                                              :call (fn [_ {:keys [user/name]} _]
+                                                      (let [user-id 7
+                                                            count (count @users)]
+                                                        (swap! users assoc user-id name)
+                                                        [(core/path-value [:users count]
+                                                                          (ref [:users/by-id user-id]))
+                                                         (core/path-value [:users/by-id user-id :user/name]
+                                                                          name)]))}])]
+                         [users router]))]
+    (testing "can call a mutation"
+      (let [[users router] (users-router)
+            result (call router [:users :add] {:user/name "Mike"})]
+        (is (= #{"Erik" "Jack" "Mike"}
+               (into #{} (vals @users))))
+        (is (= {:users {2 (ref [:users/by-id 7])}
+                :users/by-id {7 {:user/name (atom "Mike")}}}
+               result))))))

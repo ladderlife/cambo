@@ -345,6 +345,19 @@
   ([router pathmaps ctx]
    (last (sets router pathmaps ctx))))
 
+(defn calls [{:keys [route-tree]} path args ctx]
+  (letfn [(matcher [tree pathset]
+            (match tree pathset #(get-in % [:handler :call])))
+          (runner [{:keys [handler]} path _]
+            ((:call handler) path args ctx))]
+    (execute route-tree matcher runner [path])))
+
+(defn call
+  ([router path args]
+   (call router path args {}))
+  ([router path args ctx]
+   (last (calls router path args ctx))))
+
 (defrecord Router [route-tree])
 
 (defn router
