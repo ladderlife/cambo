@@ -148,7 +148,9 @@
                                                 :boxed true})]
                 (cb {:graph graph
                      :paths @ps}))))
-    nil))
+    nil)
+  (call [_ _ _ _]
+    (throw (ex-info "not implemented" {:method :call}))))
 
 (defn as-datasource [graph]
   (GraphDataSource. (clojure.core/atom (:graph (set {} [graph])))))

@@ -216,6 +216,7 @@
           (recur (into results path-matches)
                  (rest matches)
                  remaining-pathsets))
+        ;; TODO: the value of `pathsets` here are the `unhandled pathsets` -- we want this infos eventually
         results))))
 
 (defn ranges [ns]
@@ -251,65 +252,70 @@
     (into [] (map conform-key routeset pathset))))
 
 (defn run
-  [cache pathset matches runner]
+  [context pathset matches runner]
   (let [path-matches (executable-matches matches pathset)]
     (for [{:keys [path match]} path-matches
           :let [{:keys [handler]} match
                 {:keys [route]} handler
                 path (conform-path route path)]]
-      [match (runner match path cache)])))
+      [match (runner match path context)])))
 
 (defn merge-path-value
-  [cache {:keys [suffix]} {:keys [value] :as pv}]
-  (let [cache (graph/set-path-value cache pv)]
-    [cache (if (and (core/ref? value) (seq suffix))
-             [(into (:path value) suffix)]
-             [])]))
+  [context {:keys [suffix] :as h} {:keys [value path] :as pv}]
+  (let [context (-> context
+                    (update :graph graph/set-path-value pv)
+                    ;; TODO: we need both paths (optimized / requested)
+                    (update :paths conj path))]
+    [context (if (and (core/ref? value) (seq suffix))
+               [(into (:path value) suffix)]
+               [])]))
 
 (defn merge-pathmap
-  [cache match pathmap]
+  [context match pathmap]
   (let [pvs (core/pathmap-values pathmap)]
-    (reduce (fn [[cache paths] pv]
-              (let [[cache add-paths] (merge-path-value cache match pv)]
-                [cache (into paths add-paths)]))
-            [cache []]
+    (reduce (fn [[context paths] pv]
+              (let [[context add-paths] (merge-path-value context match pv)]
+                [context (into paths add-paths)]))
+            [context []]
             pvs)))
 
 (defn merge-result
-  [cache match value]
+  [context match value]
   (cond
-    (core/path-value? value) (merge-path-value cache match value)
-    (core/pathmap? value) (merge-pathmap cache match value)))
+    (core/path-value? value) (merge-path-value context match value)
+    (core/pathmap? value) (merge-pathmap context match value)))
 
 (defn merge-results
-  [cache results]
-  (loop [cache cache paths [] results results]
+  [context results]
+  (loop [context context paths [] results results]
     (if-let [[match value] (first results)]
-      (let [[cache new-paths] (merge-result cache match value)]
-        (recur cache (into paths new-paths) (rest results)))
-      [cache (->> paths
-                  (core/optimize cache)
-                  core/collapse)])))
+      (let [[context new-paths] (merge-result context match value)]
+        (recur context (into paths new-paths) (rest results)))
+      [context (->> paths
+                    (core/optimize (:graph context))
+                    core/collapse)])))
 
 (defn execute
   [router matcher runner pathsets]
-  (letfn [(match-and-run [cache pathset]
+  (letfn [(match-and-run [context pathset]
             (let [matches (matcher router pathset)
-                  results (run cache pathset matches runner)]
+                  results (run context pathset matches runner)]
               results))
-          (execute* [cache pathsets]
+          (execute* [context pathsets]
             (lazy-seq
               (if (seq pathsets)
-                (let [results (mapcat (partial match-and-run cache) pathsets)
+                (let [results (mapcat (partial match-and-run context) pathsets)
                       ;; expanding values -> value will be impl dependant
                       ;; here it is just a seq or single value
                       results (for [[match values] results
                                     value values]
                                 [match value])
-                      [cache paths] (merge-results cache results)]
-                  (cons cache (execute* cache paths)))
+                      [context paths] (merge-results context results)]
+                  (cons context (execute* context paths)))
                 nil)))]
-    (execute* {} pathsets)))
+    (execute* {:graph {}
+               :paths []}
+              pathsets)))
 
 (defn gets [{:keys [route-tree]} pathsets ctx]
   (letfn [(matcher [tree pathset]
@@ -333,10 +339,11 @@
                                     (if (seq suffix)
                                       (:get handler)
                                       (:set handler)))))
-            (runner [{:keys [handler suffix request virtual]} pathset cache]
+            (runner [{:keys [handler suffix request virtual]} pathset execution-context]
               (if (seq suffix)
                 ((:get handler) pathset ctx)
-                (let [optimized-with-path (for [path paths
+                (let [cache (:graph execution-context)
+                      optimized-with-path (for [path paths
                                                 :let [optimized (first (core/optimize cache [path]))]
                                                 :when (intersects? optimized virtual)]
                                             [optimized path])
@@ -381,9 +388,11 @@
   core/IDataSource
   (get [_ pathsets cb]
     ;; TODO: doesn't impl `:missing`
-    (cb {:graph (get router pathsets ctx)}))
-  (set [_ _ _]
-    (throw (ex-info "no impl" {}))))
+    (cb (get router pathsets ctx)))
+  (set [_ pathmaps cb]
+    (cb (set router pathmaps ctx)))
+  (call [_ path args cb]
+    (cb (call router path args ctx))))
 
 (defn as-datasource
   ([router]

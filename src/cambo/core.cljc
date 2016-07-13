@@ -6,7 +6,9 @@
 (defprotocol IDataSource
   ;; TODO: do we want this to be a single call cb, or observable?
   (get [this pathsets cb])
-  (set [this pathmaps cb]))
+  (set [this pathmaps cb])
+  ;; TODO: this will get another arg for `queries`
+  (call [this path args cb]))
 
 ;;; GRAPH
 

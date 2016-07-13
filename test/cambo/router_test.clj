@@ -105,7 +105,7 @@
     (testing "simple route"
       (let [router (router ((video-routes :summary) noop))]
         (is (= {:videos {:summary (atom 75)}}
-               (get router [[:videos :summary]])))))
+               (:graph (get router [[:videos :summary]]))))))
     (testing "should validate that optimizedPathSets strips out already found data."
       (let [calls (clojure.core/atom 0)
             router (router [{:route [:lists KEYS]
@@ -124,7 +124,7 @@
         (is (= {:lists {0 (ref [:two :be 956])
                         1 (ref [:lists 0])}
                 :two {:be {956 {:summary (atom "hello world")}}}}
-               result))
+               (:graph result)))
         (is (= 1 @calls))))
     (testing "should do precedence stripping."
       (let [rating (clojure.core/atom 0)
@@ -143,7 +143,7 @@
         (is (= 1 (count results)))
         (is (= {:videos {123 {:title (atom "title 123")
                               :rating (atom "rating 123")}}}
-               result))
+               (:graph result)))
         (is (= 1 @title))
         (is (= 1 @rating))))
     (testing "should do precedence matching."
@@ -165,7 +165,7 @@
             results (gets router [[:lists :abc 0]] {})]
         (is (= 1 (count results)))
         (is (= {:lists {:abc {0 (ref [:videos 0])}}}
-               (last results)))))
+               (:graph (last results))))))
     (testing "should not follow references if no keys specified after path to reference"
       (let [router (router [{:route [:products-by-id KEYS KEYS]
                              :get (fn [_ _] (throw (ex-info "reference followed in error" {})))}
@@ -176,7 +176,7 @@
                                                          (ref [:products-by-id "HON4033T"]))])}])]
         (is (= {:proffers-by-id {1 {:products-list {0 (ref [:products-by-id "CSC1471105X"])
                                                     1 (ref [:products-by-id "HON4033T"])}}}}
-               (get router [[:proffers-by-id 1 :products-list (range 0 2)]])))))))
+               (:graph (get router [[:proffers-by-id 1 :products-list (range 0 2)]]))))))))
 
 ;; TODO: copy the falcor set tests ... not 100% sold on impl working on harder examples!
 (deftest router-set-test
@@ -205,7 +205,7 @@
         (is (= "Huey"
                (clojure.core/get @users 1)))
         (is (= {:user/by-id {1 {:user/name (atom "Huey")}}}
-               result))))
+               (:graph result)))))
     (testing "can set path with a ref"
       (let [[users router] (users-router)
             result (set router [{:users {0 {:user/name "Huey"
@@ -214,7 +214,7 @@
                (clojure.core/get @users 1)))
         (is (= {:users {0 (ref [:user/by-id 1])}
                 :user/by-id {1 {:user/name (atom "Huey")}}}
-               result))))))
+               (:graph result)))))))
 
 (deftest router-call-test
   (let [users-router (fn []
@@ -225,8 +225,8 @@
                                                       (let [user-id 7
                                                             count (count @users)]
                                                         (swap! users assoc user-id name)
-                                                        {:users {count (ref [:users/by-id user-id])}
-                                                         :users/by-id {user-id {:user/name name}}}))}])]
+                                                        [{:users {count (ref [:users/by-id user-id])}
+                                                          :users/by-id {user-id {:user/name name}}}]))}])]
                          [users router]))]
     (testing "can call a mutation"
       (let [[users router] (users-router)
@@ -235,4 +235,4 @@
                (into #{} (vals @users))))
         (is (= {:users {2 (ref [:users/by-id 7])}
                 :users/by-id {7 {:user/name (atom "Mike")}}}
-               result))))))
+               (:graph result)))))))

@@ -81,9 +81,10 @@
 (defn set
   [{:keys [datasource] :as m} pathmaps cb]
   (set-cache m pathmaps)
-  ;; TODO: set cache again with result?
-  (core/set datasource pathmaps (fn [{:keys [paths]}]
-                                  (cb (get-cache m paths)))))
+  (core/set datasource pathmaps (fn [{:keys [graph]}]
+                                  ;; TODO: this could be partial -- but can't trust datasource paths yet (router)
+                                  (set-cache m graph)
+                                  (cb (get-cache m (core/pathmap-paths pathmaps))))))
 
 (defn prime
   [{:keys [cache datasource] :as m} pathsets cb]
