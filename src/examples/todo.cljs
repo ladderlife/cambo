@@ -4,6 +4,7 @@
             [cambo.core :as core]
             [cambo.model :as model]
             [cambo.graph :as graph]
+            [cambo.router :as router :refer [RANGES INTEGERS KEYS]]
             [cljsjs.react]
             [cljsjs.react.dom]
             [cljs.pprint :refer [pprint]]))
@@ -17,86 +18,236 @@
 (def div (tag "div"))
 (def pre (tag "pre"))
 (def h1 (tag "h1"))
+(def h3 (tag "h3"))
+(def ul (tag "ul"))
+(def li (tag "li"))
+(def input (tag "input"))
+(def button (tag "button"))
 
-(defcontainer QuoteDetails
-              {:fragments {:quote [:quote/term
-                                   :quote/policy
-                                   :quote/monthly-premium
-                                   {:quote/carrier [:carrier/name
-                                                    :carrier/description]}]
-                           :user  [:user/name]}
+(defcontainer TodoDetails
+              {:fragments {:todo [:todo/id
+                                  :todo/text
+                                  :todo/complete]}
                :component (component
+                            (handleCompleteChange [this ev]
+                                                  (let [complete (get-in (props this) [:todo :todo/complete])]
+                                                    (comp/set-model this :todo {:todo/complete (not complete)})))
+                            (handleDeleteClick [this ev]
+                                               (when-let [on-delete (get (props this) :on-delete)]
+                                                 (let [id (get-in (props this) [:todo :todo/id])]
+                                                   (on-delete id))))
                             (render [this]
-                                    (div nil
-                                         (h1 nil "QuoteDetails")
-                                         (pre nil (with-out-str
-                                                    (cljs.pprint/pprint (props this)))))))})
+                                    (let [{:keys [todo]} (props this)
+                                          {:keys [todo/text todo/complete]} todo]
+                                      (li nil
+                                          (div nil
+                                               (input #js {:type "checkbox"
+                                                           :checked complete
+                                                           :onChange #(.handleCompleteChange this %)})
+                                               (div nil text)
+                                               (button #js {:onClick #(.handleDeleteClick this %)} "delete"))))))})
 
-(def quote-details (comp/factory QuoteDetails))
+(def todo-details (comp/factory TodoDetails))
 
-(defcontainer UserQuote
-              {:initial-variables {:todo-count 1}
-               :fragments {:user (fn [{:keys [todo-count]}]
-                                   (println "todo-count" todo-count)
-                                   [:user/name
-                                    :user/age
-                                    :user/gender
-                                    (get-fragment QuoteDetails :user)
-                                    {:user/todos [{(core/range 0 todo-count) [:todo/text]}]}
-                                    {:user/quote [(get-fragment QuoteDetails :quote)]}])}
+(defcontainer TodoList
+              {:initial-variables {:count 10}
+               :fragments {:user (fn [{:keys [count]}]
+                                   [{:user/todos [{(core/range 0 count) [:todo/id
+                                                                         (get-fragment TodoDetails :todo)]}
+                                                  :length]}])}
                :component (component
-                            (componentDidMount [this]
-                                               (set! (.-timeout this)
-                                                     (js/setTimeout (fn []
-                                                                      (comp/set-variables this {:todo-count 3}))
-                                                                    3000)))
-                            (componentWillUnmount [this]
-                                                  (when-let [timeout (.-timeout this)]
-                                                    (js/clearTimeout timeout)))
+                            (handleTodoDelete [this todo-id]
+                                              (let [{:keys [count]} (comp/variables this)]
+                                                (comp/call-model this
+                                                                 [:current-user :user/todos :todo/delete]
+                                                                 {:todo/id todo-id}
+                                                                 {:this [{(core/range 0 count) [:todo/id
+                                                                                                :todo/text
+                                                                                                :todo/complete]}
+                                                                         :length]})))
                             (render [this]
                                     (let [{:keys [user]} (props this)
-                                          quote (get-in user [:user/quote])]
+                                          {:keys [user/todos]} user]
                                       (div nil
-                                           (h1 nil "UserQuote")
-                                           (pre nil (with-out-str
-                                                      (cljs.pprint/pprint (props this))))
-                                           (quote-details {:user user
-                                                           :quote quote
-                                                           :look-ma "no-computed"})))))})
+                                           (ul nil
+                                               (vec (for [idx (core/range-keys (core/range 0 10))
+                                                          :let [{:keys [todo/id] :as todo} (get todos idx)]
+                                                          :when todo]
+                                                      (todo-details {:todo todo
+                                                                     :key id
+                                                                     :on-delete #(.handleTodoDelete this %)}))))))))})
 
-(defonce ds (-> (graph/set {} [{:current-user (core/ref [:user/by-id 1])}
-                               {:user/by-id {1 {:user/name   "Huey"
-                                                :user/age    13
-                                                :user/gender :gender/male
-                                                :user/quote  (core/ref [:quote/by-id 13])
-                                                :user/todos {0 (core/ref [:todo/by-id 1])
-                                                             1 (core/ref [:todo/by-id 2])
-                                                             2 (core/ref [:todo/by-id 3])}}}}
-                               {:quote/by-id {13 {:quote/term 10
-                                                  :quote/policy 250000
-                                                  :quote/monthly-premium 13.52
-                                                  :quote/carrier (core/ref [:carrier/by-code :lddr])}}}
-                               {:carrier/by-code {:lddr {:carrier/name "Ladder"
-                                                         :carrier/description "11 badasses"}}}
-                               {:todo/by-id {1 {:todo/text "buy a unicorn"}
-                                             2 {:todo/text "learn an clojurescript"}
-                                             3 {:todo/text "pokemon go"}}}])
-                :graph
-                (graph/as-datasource)))
+(def todo-list (comp/factory TodoList))
 
-(defonce model (model/model {:datasource ds}))
+(defcomponent TodoEntry
+              (handleClick [this ev]
+                           (.preventDefault ev)
+                           (when-let [on-entry (get (props this) :on-entry)]
+                             (on-entry "Here is a todo!")))
+              (render [this]
+                      (div nil
+                           (input #js {:type "text"})
+                           (button #js {:onClick #(.handleClick this %)}
+                                   "create"))))
+
+(def todo-entry (comp/factory TodoEntry))
+
+(defcontainer TodoApp
+              {:fragments {:user [:user/id
+                                  :user/name
+                                  (get-fragment TodoList :user)]}
+               :component (component
+                            (handleEntry [this text]
+                                         (let [user-id (get-in (props this) [:user :user/id])]
+                                           (comp/call-model this
+                                                            ;; or :current-user if you prefer!
+                                                            [:user/by-id user-id :user/todos :todo/add]
+                                                            {:todo/text text
+                                                             :todo/complete false}
+                                                            {:refs [:todo/id
+                                                                    :todo/text
+                                                                    :todo/complete]})))
+                            (render [this]
+                                    (let [{:keys [user]} (props this)
+                                          {:keys [user/name]} user]
+                                      (div nil
+                                           (h1 nil "Todos")
+                                           (h3 nil name)
+                                           (todo-entry {:on-entry #(.handleEntry this %)})
+                                           (todo-list {:user user})))))})
+
+(def todo-app (comp/factory TodoApp))
+
+;; pretend these are database functions
+(def user-db (atom {13 {:user/id 13
+                        :user/name "Huey"
+                        :user/age 35
+                        :user/gender :gender/male
+                        :user/todos [1 2 3]}}))
+
+(defn get-users
+  [users ids]
+  (select-keys @users ids))
+
+(defn get-user
+  [users id]
+  (get @users id))
+
+(defn add-user-todo
+  [users id todo-id]
+  (swap! users update-in [id :user/todos] (fnil conj []) todo-id)
+  (dec (count (get-in @users [id :user/todos]))))
+
+(defn remove-user-todo
+  [users id todo-id]
+  (let [idx (.indexOf (get-in @users [id :user/todos]) todo-id)]
+    (swap! users update-in [id :user/todos] (fn [todos]
+                                              (into [] (remove #{todo-id} todos))))
+    idx))
+
+(def todo-db (atom {1 {:todo/id 1
+                       :todo/text "Buy a unicorn"
+                       :todo/complete false}
+                    2 {:todo/id 2
+                       :todo/text "Learn an clojurescript"
+                       :todo/complete false}
+                    3 {:todo/id 3
+                       :todo/text "pokemon"
+                       :todo/complete true}}))
+
+(defn get-todos
+  [todos ids]
+  (select-keys @todos ids))
+
+(defn get-todo
+  [todos id]
+  (get @todos id))
+
+(defn todo-set-complete
+  [todos id complete]
+  (swap! todos assoc-in [id :todo/complete] complete))
+
+(def todo-ids (atom 3))
+
+(defn create-todo
+  [todos args]
+  (let [id (swap! todo-ids inc)]
+    (swap! todos assoc id (merge {:todo/id id}
+                                 args))
+    id))
+
+(defn delete-todo
+  [todos id]
+  (swap! todos dissoc id))
+
+(def routes
+  [{:route [:current-user]
+    :get (fn [_ {:keys [session/user-id]}]
+           [(core/path-value [:current-user]
+                             (core/ref [:user/by-id user-id]))])}
+
+   {:route [:user/by-id INTEGERS [:user/id :user/name :user/age :user/gender]]
+    :get (fn [[_ ids keys] {:keys [db/users]}]
+           (for [[id user] (get-users users ids)]
+             {:user/by-id {id (select-keys user keys)}}))}
+
+   {:route [:user/by-id INTEGERS :user/todos RANGES]
+    :get (fn [[_ ids _ ranges] {:keys [db/users]}]
+           (for [[id {:keys [user/todos]}] (get-users users ids)
+                 idx (router/indices ranges)
+                 :let [todo-id (get todos idx)]
+                 :when todo-id]
+             (core/path-value [:user/by-id id :user/todos idx]
+                              (core/ref [:todo/by-id todo-id]))))}
+
+   {:route [:user/by-id INTEGERS :user/todos :length]
+    :get (fn [[_ ids] {:keys [db/users]}]
+           (for [[id {:keys [user/todos]}] (get-users users ids)]
+             (core/path-value [:user/by-id id :user/todos :length]
+                              (count todos))))}
+
+   {:route [:todo/by-id INTEGERS [:todo/id :todo/text :todo/complete]]
+    :get (fn [[_ ids keys] {:keys [db/todos]}]
+           (for [[id todo] (get-todos todos ids)]
+             {:todo/by-id {id (select-keys todo keys)}}))}
+
+   {:route [:todo/by-id INTEGERS :todo/complete]
+    :set (fn [pathmap {:keys [db/todos]}]
+           (doseq [[id complete] (:todo/by-id pathmap)]
+             (todo-set-complete todos id complete))
+           [pathmap])}
+
+   {:route [:user/by-id INTEGERS :user/todos :todo/add]
+    :call (fn [[_ [id]] args {:keys [db/todos db/users]}]
+            (let [todo-id (create-todo todos args)
+                  idx (add-user-todo users id todo-id)]
+              [(core/path-value [:user/by-id id :user/todos idx]
+                                (core/ref [:todo/by-id todo-id]))
+               ;; this should be refPaths
+               {:todo/by-id {todo-id (merge {:todo/id todo-id}
+                                            args)}}]))}
+
+   {:route [:user/by-id INTEGERS :user/todos :todo/delete]
+    :call (fn [[_ [id]] args {:keys [db/todos db/users]}]
+            (let [todo-id (:todo/id args)
+                  idx (remove-user-todo users id todo-id)]
+              (delete-todo todos todo-id)
+              (into [(core/invalidate [:user/by-id id :user/todos idx])
+                     (core/invalidate [:user/by-id id :user/todos])
+                     (core/invalidate [:todos/by-id todo-id :user/todos idx])]
+                     ;; this should be thisPaths
+                     (for [[idx todo-id] (map-indexed vector (:user/todos (get-user users id)))]
+                       (core/path-value [:user/by-id id :user/todos idx]
+                                        (core/ref [:todo/by-id todo-id]))))))}])
+
+(def router (router/router routes))
+
+(def model (model/model {:datasource (router/as-datasource router {:session/user-id 13
+                                                                   :db/users user-db
+                                                                   :db/todos todo-db})}))
 
 (js/ReactDOM.render
   (comp/renderer {:queries {:user [:current-user]}
-                  :container UserQuote
+                  :container TodoApp
                   :model model})
   (.getElementById js/document "app"))
-
-(defonce interval (js/setInterval
-           (fn []
-             ;; TODO: lol add get-value / get-cache-value method
-             (let [age (get-in (model/get-cache model [[:user/by-id 1 :user/age]])
-                               [:user/by-id 1 :user/age])]
-               ;; TODO: lol add set-value / set-cache-value method
-               (model/set-cache model [{:user/by-id {1 {:user/age (inc age)}}}])))
-           2000))

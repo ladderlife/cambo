@@ -64,6 +64,12 @@
               (publish m)
               (:graph (graph/get c @ps {:normalize false}))))))
 
+(defn invalidate-cache
+  [{:keys [cache]} paths]
+  (swap! cache (fn [cache]
+                 (:graph (graph/invalidate cache paths))))
+  paths)
+
 ;; TODO: look at how falcor handles boxing / normalization for intermediate results / final results
 
 (defn get
@@ -83,8 +89,15 @@
   (set-cache m pathmaps)
   (core/set datasource pathmaps (fn [{:keys [graph]}]
                                   ;; TODO: this could be partial -- but can't trust datasource paths yet (router)
-                                  (set-cache m graph)
+                                  (set-cache m [graph])
                                   (cb (get-cache m (core/pathmap-paths pathmaps))))))
+
+(defn call
+  [{:keys [datasource] :as m} path args queries cb]
+  (core/call datasource path args queries (fn [{:keys [graph invalidate]}]
+                                            (invalidate-cache m invalidate)
+                                            (set-cache m [graph])
+                                            (cb graph))))
 
 (defn prime
   [{:keys [cache datasource] :as m} pathsets cb]

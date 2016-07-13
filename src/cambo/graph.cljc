@@ -120,6 +120,16 @@
                          value
                          (atom value)))))))
 
+(defn invalidate
+  [graph paths]
+  ;; TODO: could remove empty branches post-walk style
+  (letfn [(invalidate-path [graph path]
+            (let [key (last path)
+                  path (butlast path)]
+              (update-in graph path dissoc key)))]
+    {:graph (reduce invalidate-path graph paths)
+     :paths paths}))
+
 (defrecord GraphDataSource [graph])
 
 ;; have to extend type due to get / set names clashing with core ... oops!
@@ -149,7 +159,7 @@
                 (cb {:graph graph
                      :paths @ps}))))
     nil)
-  (call [_ _ _ _]
+  (call [_ _ _ _ _]
     (throw (ex-info "not implemented" {:method :call}))))
 
 (defn as-datasource [graph]

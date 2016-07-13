@@ -22,16 +22,20 @@
          (expand-routeset [[:user/by-id :users] [0 1] [:name :age]]))))
 
 (deftest route-tree-test
-  (let [route1 {:route [:users/by-id RANGES [:name :age]]}
-        route2 {:route [:users]}]
-    (is (= {:users/by-id {RANGES {:name {match-key route1}
-                                 :age {match-key route1}}}
-            :users {match-key route2}}
+  (let [route1 {:route [:users/by-id RANGES [:name :age]]
+                :get true}
+        route2 {:route [:users]
+                :get true}]
+    (is (= {:users/by-id {RANGES {:name {match-key {:get route1}}
+                                 :age {match-key {:get route1}}}}
+            :users {match-key {:get route2}}}
            (clojure.walk/postwalk #(cond-> % (map? %) (dissoc id-key))
                                   (route-tree [route1 route2])))))
   (is (thrown? Exception
-               (let [route1 {:route [:users/by-id RANGES [:name :age]]}
-                     route2 {:route [:users/by-id INTEGERS [:name :age]]}]
+               (let [route1 {:route [:users/by-id RANGES [:name :age]]
+                             :get true}
+                     route2 {:route [:users/by-id INTEGERS [:name :age]]
+                             :get true}]
                  (route-tree [route1 route2])))))
 
 (deftest strip-path-test
@@ -218,21 +222,71 @@
 
 (deftest router-call-test
   (let [users-router (fn []
-                       (let [users (clojure.core/atom {1 "Erik"
-                                                       2 "Jack"})
-                             router (router [{:route [:users :add]
+                       (let [users (clojure.core/atom {1 {:user/name "Erik"}
+                                                       2 {:user/name "Jack"}})
+                             router (router [{:route [:users RANGES]
+                                              :get (fn [[_ ranges] _]
+                                                     (for [idx (indices ranges)]
+                                                       (core/path-value [:users idx]
+                                                                        (ref [:user/by-id
+                                                                              (clojure.core/get (into [] (keys @users)) idx)]))))}
+                                             {:route [:users :add]
                                               :call (fn [_ {:keys [user/name]} _]
                                                       (let [user-id 7
                                                             count (count @users)]
-                                                        (swap! users assoc user-id name)
-                                                        [{:users {count (ref [:users/by-id user-id])}
-                                                          :users/by-id {user-id {:user/name name}}}]))}])]
+                                                        (swap! users assoc user-id {:user/name name})
+                                                        [{:users {count (ref [:user/by-id user-id])}}]))}
+                                             {:route [:users :length]
+                                              :get (fn [_ _]
+                                                     [(core/path-value [:users :length]
+                                                                       (count @users))])}
+                                             {:route [:user/by-id INTEGERS :user/name]
+                                              :get (fn [[_ ids] _]
+                                                     (for [id ids]
+                                                       (core/path-value [:user/by-id id :user/name]
+                                                                        (get-in @users [id :user/name]))))}
+                                             {:route [:user/by-id INTEGERS :user/friend]
+                                              :get (fn [[_ ids] _]
+                                                     (for [id ids
+                                                           :let [friend-id (get-in @users [id :user/friend])]
+                                                           :when friend-id]
+                                                       (core/path-value [:user/by-id id :user/friend]
+                                                                        (ref [:user/by-id friend-id]))))}
+                                             {:route [:user/by-id INTEGERS :user/set-name]
+                                              :call (fn [[_ [id]] {:keys [user/name]} _]
+                                                      (swap! users assoc-in [id :user/name] name)
+                                                      [])}
+                                             {:route [:user/by-id INTEGERS :user/set-friend]
+                                              :call (fn [[_ [id]] args _]
+                                                      (let [friend-id (:user/id args)]
+                                                        (swap! users assoc-in [id :user/friend] friend-id)
+                                                        [(core/path-value [:user/by-id id :user/friend]
+                                                                          (ref [:user/by-id friend-id]))]))}])]
                          [users router]))]
     (testing "can call a mutation"
       (let [[users router] (users-router)
-            result (call router [:users :add] {:user/name "Mike"})]
+            result (call router [:users :add] {:user/name "Mike"} {:refs [[:user/name]]
+                                                                   :this [[:length]]})]
         (is (= #{"Erik" "Jack" "Mike"}
-               (into #{} (vals @users))))
-        (is (= {:users {2 (ref [:users/by-id 7])}
-                :users/by-id {7 {:user/name (atom "Mike")}}}
+               (into #{} (map :user/name (vals @users)))))
+        (is (= {:users {2 (ref [:user/by-id 7])
+                        :length (atom 3)}
+                :user/by-id {7 {:user/name (atom "Mike")}}}
+               (:graph result)))))
+    (testing "can call a mutation with optimization"
+      (let [[users router] (users-router)
+            result (call router [:users 0 :user/set-name] {:user/name "Huey"} {:this [[:user/name]]})]
+        (is (= #{"Huey" "Jack"}
+               (into #{} (map :user/name (vals @users)))))
+        (is (= {:users {0 (ref [:user/by-id 1])}
+                :user/by-id {1 {:user/name (atom "Huey")}}}
+               (:graph result)))))
+    (testing "can call a mutation with optimization and ref"
+      (let [[users router] (users-router)
+            result (call router [:users 0 :user/set-friend] {:user/id 2} {:refs [[:user/name]]})]
+        (is (= 2
+               (get-in @users [1 :user/friend])))
+        (is (= {:users {0 (ref [:user/by-id 1])}
+                :user/by-id {1 {:user/friend (ref [:user/by-id 2])}
+                             2 {:user/name (atom "Jack")}}}
                (:graph result)))))))

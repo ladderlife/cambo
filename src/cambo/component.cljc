@@ -14,8 +14,13 @@
   (get-props (.-props comp)))
 
 #?(:cljs (defn ->props
-           [props]
-           (js-obj props-key props)))
+           [{:keys [key] :as props}]
+           (let [js-props (js-obj props-key props)]
+             ;; TODO: nicer way to do this?
+             ;; TODO: any other keys require this?
+             ;; pull key from props into component react base props
+             (when key (aset js-props "key" key))
+             js-props)))
 
 (def state-key "cambo$state")
 
@@ -252,7 +257,13 @@
                                      (->state {:query-data nil
                                                :variables nil
                                                :cambo/variables {:run (fn [variables cb force?]
-                                                                        (.run-variables this variables cb force?))}}))
+                                                                        (.run-variables this variables cb force?))
+                                                                 :set (fn [pathmaps cb]
+                                                                        (let [{:keys [model]} (context this)]
+                                                                          (model/set model pathmaps cb)))
+                                                                 :call (fn [path args queries cb]
+                                                                         (let [{:keys [model]} (context this)]
+                                                                           (model/call model path args queries cb)))}}))
                                this))]
              (set! (.-prototype container)
                    (goog.object/clone js/React.Component.prototype))
@@ -456,3 +467,17 @@
 #?(:cljs (defn factory [cls]
            (fn [props & children]
              (apply React.createElement cls (->props props) children))))
+
+(defn set-model
+  [this prop-key pathmap]
+  (let [{:keys [set]} (variables* this)
+        path (get-path (props this) prop-key)]
+    (set [(assoc-in {} path pathmap)] (fn [_]))))
+
+(defn call-model
+  [this path args queries]
+  (let [{:keys [call]} (variables* this)
+        queries (cond-> queries
+                        (:this queries) (update :this pull)
+                        (:refs queries) (update :refs pull))]
+    (call path args queries (fn [_]))))

@@ -7,8 +7,7 @@
   ;; TODO: do we want this to be a single call cb, or observable?
   (get [this pathsets cb])
   (set [this pathmaps cb])
-  ;; TODO: this will get another arg for `queries`
-  (call [this path args cb]))
+  (call [this path args queries cb]))
 
 ;;; GRAPH
 
@@ -53,13 +52,45 @@
            (= #{:path :value}
               (into #{} (clojure.core/keys x))))))
 
+;; TODO: move messages to router?  only make sense there?
+;; consider making this `Message` and invalidate is a type of message
+(defrecord Invalidate [path])
+
+(defn invalidate? [x]
+  (instance? Invalidate x))
+
+(defn invalidate [path]
+  (Invalidate. path))
+
+(defrecord AdditionalPaths [paths])
+
+(defn additional-paths [paths]
+  (AdditionalPaths. paths))
+
+(defn additional-path [path]
+  (additional-paths [path]))
+
+(defn additional-paths? [x]
+  (instance? AdditionalPaths x))
+
+(defrecord SetMethod [method])
+
+(defn set-method [method]
+  (SetMethod. method))
+
+(defn set-method? [x]
+  (instance? SetMethod x))
+
+(defn message? [x]
+  (or (invalidate? x)
+      (additional-paths? x)
+      (set-method? x)))
+
 (defn pathmap? [x]
   (and (map? x)
-       (not (path-value? x))))
+       (and (not (path-value? x))
+            (not (message? x)))))
 
-;; TODO:
-;; - pathmap
-;; - pathvalue
 
 ;;; KEYS
 
