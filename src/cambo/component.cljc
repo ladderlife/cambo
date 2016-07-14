@@ -389,7 +389,7 @@
              container)))
 
 #?(:cljs (do
-           (defn StaticContainer []
+           (defn ^{:jsdoc ["@constructor"]} StaticContainer []
              (this-as this
                (.apply js/React.Component this (js-arguments))
                this))
@@ -406,7 +406,7 @@
                  (React.Children.only child))))))
 
 #?(:cljs (do
-           (defn Renderer []
+           (defn ^{:jsdoc ["@constructor"]} Renderer []
              (this-as this
                ;; TODO: state!
                (set! (.-mounted this) true)
