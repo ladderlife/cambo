@@ -400,7 +400,7 @@
            (specify! (.-prototype StaticContainer)
              Object
              (shouldComponentUpdate [this next-props next-state]
-               (not (not (.-shouldUpdate next-props))))
+               (not (not (aget next-props "shouldUpdate"))))
              (render [this]
                (when-let [child (.. this -props -children)]
                  (React.Children.only child))))))
@@ -417,7 +417,10 @@
            (set! (.-prototype Renderer)
                  (goog.object/clone js/React.Component.prototype))
 
-           (set! (.-childContextTypes Renderer) (->context React.PropTypes.object))
+           ;; this is not in extern ...
+           ;(set! (.-childContextTypes Renderer) (->context React.PropTypes.object))
+
+           (aset Renderer "childContextTypes" (->context React.PropTypes.object))
 
            (specify! (.-prototype Renderer)
              Object

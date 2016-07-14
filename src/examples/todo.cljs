@@ -5,8 +5,7 @@
             [cambo.http :refer [http-datasource]]
             [cambo.model :as model]
             [cljsjs.react]
-            [cljsjs.react.dom]
-            [cljs.pprint :refer [pprint]]))
+            [cljsjs.react.dom]))
 
 
 (enable-console-print!)
