@@ -24,57 +24,55 @@
 (def button (tag "button"))
 
 (defcontainer TodoDetails
-              {:fragments {:todo [:todo/id
-                                  :todo/text
-                                  :todo/complete]}
-               :component (component
-                            (handleCompleteChange [this ev]
-                                                  (let [complete (get-in (props this) [:todo :todo/complete])]
-                                                    (comp/set-model this :todo {:todo/complete (not complete)})))
-                            (handleDeleteClick [this ev]
-                                               (when-let [on-delete (get (props this) :on-delete)]
-                                                 (let [id (get-in (props this) [:todo :todo/id])]
-                                                   (on-delete id))))
-                            (render [this]
-                                    (let [{:keys [todo]} (props this)
-                                          {:keys [todo/text todo/complete]} todo]
-                                      (li nil
-                                          (div nil
-                                               (input #js {:type "checkbox"
-                                                           :checked complete
-                                                           :onChange #(.handleCompleteChange this %)})
-                                               (div nil text)
-                                               (button #js {:onClick #(.handleDeleteClick this %)} "delete"))))))})
+              :fragments {:todo [:todo/id
+                                 :todo/text
+                                 :todo/complete]}
+              (handleCompleteChange [this ev]
+                                    (let [complete (get-in (props this) [:todo :todo/complete])]
+                                      (comp/set-model this :todo {:todo/complete (not complete)})))
+              (handleDeleteClick [this ev]
+                                 (when-let [on-delete (get (props this) :on-delete)]
+                                   (let [id (get-in (props this) [:todo :todo/id])]
+                                     (on-delete id))))
+              (render [this]
+                      (let [{:keys [todo]} (props this)
+                            {:keys [todo/text todo/complete]} todo]
+                        (li nil
+                            (div nil
+                                 (input #js {:type "checkbox"
+                                             :checked complete
+                                             :onChange #(.handleCompleteChange this %)})
+                                 (div nil text)
+                                 (button #js {:onClick #(.handleDeleteClick this %)} "delete"))))))
 
 (def todo-details (comp/factory TodoDetails))
 
 (defcontainer TodoList
-              {:initial-variables {:count 10}
-               :fragments {:user (fn [{:keys [count]}]
-                                   [{:user/todos [{(core/range 0 count) [:todo/id
-                                                                         (get-fragment TodoDetails :todo)]}
-                                                  :length]}])}
-               :component (component
-                            (handleTodoDelete [this todo-id]
-                                              (let [{:keys [count]} (comp/variables this)]
-                                                (comp/call-model this
-                                                                 [:current-user :user/todos :todo/delete]
-                                                                 {:todo/id todo-id}
-                                                                 {:this [{(core/range 0 count) [:todo/id
-                                                                                                :todo/text
-                                                                                                :todo/complete]}
-                                                                         :length]})))
-                            (render [this]
-                                    (let [{:keys [user]} (props this)
-                                          {:keys [user/todos]} user]
-                                      (div nil
-                                           (ul nil
-                                               (vec (for [idx (core/range-keys (core/range 0 10))
-                                                          :let [{:keys [todo/id] :as todo} (get todos idx)]
-                                                          :when todo]
-                                                      (todo-details {:todo todo
-                                                                     :key id
-                                                                     :on-delete #(.handleTodoDelete this %)}))))))))})
+              :initial-variables {:count 10}
+              :fragments {:user (fn [{:keys [count]}]
+                                  [{:user/todos [{(core/range 0 count) [:todo/id
+                                                                        (get-fragment TodoDetails :todo)]}
+                                                 :length]}])}
+              (handleTodoDelete [this todo-id]
+                                (let [{:keys [count]} (comp/variables this)]
+                                  (comp/call-model this
+                                                   [:current-user :user/todos :todo/delete]
+                                                   {:todo/id todo-id}
+                                                   {:this [{(core/range 0 count) [:todo/id
+                                                                                  :todo/text
+                                                                                  :todo/complete]}
+                                                           :length]})))
+              (render [this]
+                      (let [{:keys [user]} (props this)
+                            {:keys [user/todos]} user]
+                        (div nil
+                             (ul nil
+                                 (vec (for [idx (core/range-keys (core/range 0 10))
+                                            :let [{:keys [todo/id] :as todo} (get todos idx)]
+                                            :when todo]
+                                        (todo-details {:todo todo
+                                                       :key id
+                                                       :on-delete #(.handleTodoDelete this %)}))))))))
 
 (def todo-list (comp/factory TodoList))
 
@@ -92,28 +90,27 @@
 (def todo-entry (comp/factory TodoEntry))
 
 (defcontainer TodoApp
-              {:fragments {:user [:user/id
-                                  :user/name
-                                  (get-fragment TodoList :user)]}
-               :component (component
-                            (handleEntry [this text]
-                                         (let [user-id (get-in (props this) [:user :user/id])]
-                                           (comp/call-model this
-                                                            ;; or :current-user if you prefer!
-                                                            [:user/by-id user-id :user/todos :todo/add]
-                                                            {:todo/text text
-                                                             :todo/complete false}
-                                                            {:refs [:todo/id
-                                                                    :todo/text
-                                                                    :todo/complete]})))
-                            (render [this]
-                                    (let [{:keys [user]} (props this)
-                                          {:keys [user/name]} user]
-                                      (div nil
-                                           (h1 nil "Todos")
-                                           (h3 nil name)
-                                           (todo-entry {:on-entry #(.handleEntry this %)})
-                                           (todo-list {:user user})))))})
+              :fragments {:user [:user/id
+                                 :user/name
+                                 (get-fragment TodoList :user)]}
+              (handleEntry [this text]
+                           (let [user-id (get-in (props this) [:user :user/id])]
+                             (comp/call-model this
+                                              ;; or :current-user if you prefer!
+                                              [:user/by-id user-id :user/todos :todo/add]
+                                              {:todo/text text
+                                               :todo/complete false}
+                                              {:refs [:todo/id
+                                                      :todo/text
+                                                      :todo/complete]})))
+              (render [this]
+                      (let [{:keys [user]} (props this)
+                            {:keys [user/name]} user]
+                        (div nil
+                             (h1 nil "Todos")
+                             (h3 nil name)
+                             (todo-entry {:on-entry #(.handleEntry this %)})
+                             (todo-list {:user user})))))
 
 (def todo-app (comp/factory TodoApp))
 
