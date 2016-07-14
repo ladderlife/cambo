@@ -430,6 +430,19 @@
   ([router path args queries ctx]
    (last (calls router path args queries ctx))))
 
+;; TODO: this name sucks
+(defn handle
+  ([router request]
+   (handle router request {}))
+  ([router {:keys [method] :as request} ctx]
+   (case method
+     :get (let [{:keys [pathsets]} request]
+            (get router pathsets ctx))
+     :set (let [{:keys [pathmaps]} request]
+            (set router pathmaps ctx))
+     :call (let [{:keys [path args queries]} request]
+             (call router path args queries ctx)))))
+
 (defrecord Router [route-tree])
 
 (defn router

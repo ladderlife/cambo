@@ -18,7 +18,10 @@
                          [org.clojure/clojurescript "1.8.51"]
                          [clj-http "2.2.0"]
                          [cheshire "5.6.2"]
-                         [environ "1.0.3"]]}}
+                         [environ "1.0.3"]
+                         [ring "1.5.0"]
+                         [com.cognitect/transit-clj "0.8.285"]
+                         [com.cognitect/transit-cljs "0.8.239"]]}}
   :cljsbuild {:builds [{:id "dev"
                         :source-paths ["src"]
                         :figwheel true

@@ -14,9 +14,9 @@
                              path (conj path k)
                              opt (conj opt k)
                              result (if (and path-info (some? node))
-                                      (do (assoc-in result
-                                                    (into [:graph] (conj path :cambo/path))
-                                                    opt))
+                                      (assoc-in result
+                                                (into [:graph] (conj path :cambo/path))
+                                                opt)
                                       result)]
                          (if (seq pathset)
                            (cond
@@ -29,9 +29,9 @@
                                             result)
                                    opt (:path node)
                                    result (if path-info
-                                            (do (assoc-in result
-                                                          (into [:graph] (conj path :cambo/path))
-                                                          opt))
+                                            (assoc-in result
+                                                      (into [:graph] (conj path :cambo/path))
+                                                      opt)
                                             result)
                                    node (get-in graph opt)]
                                (get-pathset node path opt result pathset))
@@ -47,10 +47,10 @@
                                                       node
                                                       (:value node)))
                              (ref? node) (if path-info
-                                           (do (let [opt (:path node)]
-                                                 (assoc-in result
-                                                           (into [:graph] (conj path :cambo/path))
-                                                           opt)))
+                                           (let [opt (:path node)]
+                                             (assoc-in result
+                                                       (into [:graph] (conj path :cambo/path))
+                                                       opt))
                                            result)
                              (nil? node) (update result :missing conj opt)
                              :else result))))
