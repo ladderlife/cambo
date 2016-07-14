@@ -1,4 +1,4 @@
-(defproject com.athuey/cambo "0.1.0-SNAPSHOT"
+(defproject com.ladderlife/cambo "0.1.0-SNAPSHOT"
   :description "A Clojure take on Netflix's Falcor"
   :url "https://github.com/eyston/cambo"
   :license {:name "Eclipse Public License"
