@@ -276,45 +276,56 @@
                 path (conform-path route path)]]
       [match (runner match path context)])))
 
-(defn merge-path-value
-  [context {:keys [suffix]} {:keys [value path] :as pv}]
-  (let [context (-> context
-                    (update :graph graph/set-path-value pv)
-                    ;; TODO: we need both paths (optimized / requested)
-                    (update :paths conj path))]
-    [context (if (and (core/ref? value) (seq suffix))
-               [(into (:path value) suffix)]
-               [])]))
+(defprotocol RouteResult
+  (update-context [this context match]))
 
-(defn merge-pathmap
-  [context match pathmap]
-  (let [pvs (core/pathmap-values pathmap)]
-    (reduce (fn [[context paths] pv]
-              (let [[context add-paths] (merge-path-value context match pv)]
-                [context (into paths add-paths)]))
-            [context []]
-            pvs)))
+(extend-protocol RouteResult
+  cambo.core.PathValue
+  (update-context [{:keys [path value] :as pv} context {:keys [suffix]}]
+    (let [context (-> context
+                      (update :graph graph/set-path-value pv)
+                      (update :paths conj path))]
+      (cond-> context
+              (and (core/ref? value) (seq suffix))
+              (update :pathsets conj (into (:path value) suffix)))))
 
-(defn merge-invalidate
-  [context _ {:keys [path]}]
-  [(update context :invalidate (fnil conj []) path) []])
+  ;; TODO: this is probably not sufficient ;p
+  clojure.lang.PersistentArrayMap
+  (update-context [pathmap context match]
+    (reduce (fn [context pv]
+              (update-context pv context match))
+            context
+            (core/pathmap-values pathmap))))
 
-(defn merge-additional-paths
-  [context _ {:keys [paths]}]
-  [context paths])
+(deftype Invalidate [path]
+  RouteResult
+  (update-context [_ context _]
+    ;; TODO: remove this fnil -- context should have this to start!
+    (update context :invalidate (fnil conj []) path)))
 
-(defn merge-set-method
-  [context _ {:keys [method]}]
-  [(assoc context :method method) []])
+(defn invalidate [path]
+  (Invalidate. path))
+
+(deftype AdditionalPaths [pathsets]
+  RouteResult
+  (update-context [_ context _]
+    (update context :pathsets into pathsets)))
+
+(defn additional-paths [paths]
+  (AdditionalPaths. paths))
+
+(deftype SetMethod [method]
+  RouteResult
+  (update-context [_ context _]
+    (assoc context :method method)))
+
+(defn set-method [method]
+  (SetMethod. method))
 
 (defn merge-result
   [context match value]
-  (cond
-    (core/path-value? value) (merge-path-value context match value)
-    (core/additional-paths? value) (merge-additional-paths context match value)
-    (core/set-method? value) (merge-set-method context match value)
-    (core/invalidate? value) (merge-invalidate context match value)
-    (core/pathmap? value) (merge-pathmap context match value)))
+  (let [{:keys [pathsets] :as context} (update-context value (assoc context :pathsets []) match)]
+    [(dissoc context :pathsets) pathsets]))
 
 (defn merge-results
   [context results]
@@ -405,7 +416,7 @@
                                          (and (core/path-value? result)
                                               (core/ref? (:value result))))
                                        results)
-                          results (conj results (core/set-method :get))
+                          results (conj results (set-method :get))
                           ;; I don't think this distinction matters for our impl of falcor
                           deopt-path (into [] (butlast call-path))
                           this-path (into [] (butlast matched-path))
@@ -419,8 +430,8 @@
                                                  suffix (:refs queries)]
                                              (into base-path suffix)))
                           results (cond-> results
-                                          (seq this-paths) (conj (core/additional-paths this-paths))
-                                          (seq ref-paths) (conj (core/additional-paths ref-paths)))]
+                                          (seq this-paths) (conj (additional-paths this-paths))
+                                          (seq ref-paths) (conj (additional-paths ref-paths)))]
                       results)))]
     (execute route-tree :call runner [call-path])))
 

@@ -45,54 +45,14 @@
   (PathValue. path value))
 
 (defn path-value? [x]
-  (or (instance? PathValue x)
-      ;; allow a {:path :value} map for now
-      ;; downside is pathmap will need to *NOT* match this case
-      (and (map? x)
-           (= #{:path :value}
-              (into #{} (clojure.core/keys x))))))
-
-;; TODO: move messages to router?  only make sense there?
-;; consider making this `Message` and invalidate is a type of message
-(defrecord Invalidate [path])
-
-(defn invalidate? [x]
-  (instance? Invalidate x))
-
-(defn invalidate [path]
-  (Invalidate. path))
-
-(defrecord AdditionalPaths [paths])
-
-(defn additional-paths [paths]
-  (AdditionalPaths. paths))
-
-(defn additional-path [path]
-  (additional-paths [path]))
-
-(defn additional-paths? [x]
-  (instance? AdditionalPaths x))
-
-(defrecord SetMethod [method])
-
-(defn set-method [method]
-  (SetMethod. method))
-
-(defn set-method? [x]
-  (instance? SetMethod x))
-
-(defn message? [x]
-  (or (invalidate? x)
-      (additional-paths? x)
-      (set-method? x)))
+  (instance? PathValue x))
 
 (defn pathmap [path value]
   (assoc-in {} path value))
 
 (defn pathmap? [x]
   (and (map? x)
-       (and (not (path-value? x))
-            (not (message? x)))))
+       (not (record? x))))
 
 ;;; KEYS
 

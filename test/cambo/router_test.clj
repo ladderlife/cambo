@@ -116,8 +116,8 @@
                              :get (fn [[_ ids] _]
                                     (for [id ids]
                                       (if (= 0 id)
-                                        {:path [:lists id] :value (ref [:two :be 956])}
-                                        {:path [:lists id] :value (ref [:lists 0])})))}
+                                        (path-value [:lists id] (ref [:two :be 956]))
+                                        (path-value [:lists id] (ref [:lists 0])))))}
                             {:route [:two :be INTEGERS :summary]
                              :get (fn [[_ _ ids] _]
                                     (for [id ids]
