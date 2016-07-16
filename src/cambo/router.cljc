@@ -284,7 +284,7 @@
   (update-context [{:keys [path value] :as pv} context {:keys [suffix]}]
     (let [context (-> context
                       (update :graph graph/set-path-value pv)
-                      (update :paths conj path))]
+                      (update :optimized conj path))]
       (cond-> context
               (and (core/ref? value) (seq suffix))
               (update :pathsets conj (into (:path value) suffix)))))
@@ -300,8 +300,7 @@
 (deftype Invalidate [path]
   RouteResult
   (update-context [_ context _]
-    ;; TODO: remove this fnil -- context should have this to start!
-    (update context :invalidate (fnil conj []) path)))
+    (update context :invalidate conj path)))
 
 (defn invalidate [path]
   (Invalidate. path))
@@ -322,28 +321,40 @@
 (defn set-method [method]
   (SetMethod. method))
 
-(defn merge-result
-  [context match value]
-  (let [{:keys [pathsets] :as context} (update-context value (assoc context :pathsets []) match)]
-    [(dissoc context :pathsets) pathsets]))
-
 (defn merge-results
   [context results]
-  (loop [context context paths [] results results]
-    (if-let [[match value] (first results)]
-      (let [[context new-paths] (merge-result context match value)]
-        (recur context (into paths new-paths) (rest results)))
-      [context (->> paths
-                    (core/optimize (:graph context))
-                    core/collapse)])))
+  (letfn [(optimize-pathsets [{:keys [pathsets graph] :as context}]
+            (assoc context :pathsets (->> pathsets
+                                          (core/optimize graph)
+                                          core/collapse
+                                          (into []))))]
+    (let [context (reduce (fn [context [match value]]
+                            (update-context value context match))
+                          context
+                          results)
+          context (optimize-pathsets context)]
+      context)))
+
+(defn init-context
+  [method pathsets env]
+  {:method method
+   :pathsets pathsets
+   :env env
+   :graph {}
+   :request pathsets
+   :matched []
+   :optimized []
+   :missing []})
 
 (defn execute
-  [route-tree method runner pathsets]
-  (letfn [(match-and-run [{:keys [method] :as context} pathset]
+  [route-tree context runner]
+  (letfn [(context-result [context]
+            (dissoc context :method :pathsets :env))
+          (match-and-run [{:keys [method] :as context} pathset]
             (let [matches (match route-tree method pathset)
                   results (run context pathset matches runner)]
               results))
-          (execute* [context pathsets]
+          (execute* [{:keys [pathsets] :as context}]
             (lazy-seq
               (if (seq pathsets)
                 (let [results (mapcat (partial match-and-run context) pathsets)
@@ -352,33 +363,36 @@
                       results (for [[match values] results
                                     value values]
                                 [match value])
-                      [context paths] (merge-results context results)]
-                  (cons (dissoc context :method)
-                        (execute* context paths)))
+                      context (-> context
+                                  ;; clear matched pathsets
+                                  (assoc :pathsets [])
+                                  ;; merge results / add new pathsets for refs
+                                  (merge-results results))]
+                  (cons (context-result context)
+                        (execute* context)))
                 nil)))]
-    (execute* {:method method
-               :graph {}
-               :paths []}
-              pathsets)))
+    (execute* context)))
 
-(defn gets [{:keys [route-tree]} pathsets ctx]
+(defn gets [{:keys [route-tree]} pathsets env]
   (letfn [(runner [{:keys [handler]} path _]
-            ((:get handler) path ctx))]
-    (execute route-tree :get runner pathsets)))
+            ((:get handler) path env))]
+    (execute route-tree
+             (init-context :get pathsets env)
+             runner)))
 
 (defn get
   ([router pathsets]
    (get router pathsets {}))
-  ([router pathsets ctx]
-   (last (gets router pathsets ctx))))
+  ([router pathsets env]
+   (last (gets router pathsets env))))
 
-(defn sets [{:keys [route-tree]} pathmaps ctx]
+(defn sets [{:keys [route-tree]} pathmaps env]
   (let [{:keys [graph paths]} (graph/set {} pathmaps)
         ;; TODO: not sure if this is necessary
         paths (core/expand-pathsets paths)]
     (letfn [(runner [{:keys [method handler request virtual]} pathset execution-context]
               (case method
-                :get ((:get handler) pathset ctx)
+                :get ((:get handler) pathset env)
                 :set (let [cache (:graph execution-context)
                            optimized-with-path (for [path paths
                                                      :let [optimized (first (core/optimize cache [path]))]
@@ -391,21 +405,23 @@
                                              {}
                                              optimized-with-path)
                            pathmap (:graph (graph/get set-graph [request]))]
-                  ((:set handler) pathmap ctx))))]
+                  ((:set handler) pathmap env))))]
       (let [pathsets (core/collapse paths)]
-        (execute route-tree :set runner pathsets)))))
+        (execute route-tree
+                 (init-context :set pathsets env)
+                 runner)))))
 
 (defn set
   ([router pathmaps]
    (set router pathmaps {}))
-  ([router pathmaps ctx]
-   (last (sets router pathmaps ctx))))
+  ([router pathmaps env]
+   (last (sets router pathmaps env))))
 
-(defn calls [{:keys [route-tree]} call-path args queries ctx]
+(defn calls [{:keys [route-tree]} call-path args queries env]
   (letfn [(runner [{:keys [method handler request]} matched-path _]
             (case method
-              :get ((:get handler) matched-path ctx)
-              :call (let [results ((:call handler) matched-path args ctx)
+              :get ((:get handler) matched-path env)
+              :call (let [results ((:call handler) matched-path args env)
                           ;; expand pathmaps so we can search for refs
                           results (into [] (mapcat (fn [result]
                                                      (if (core/pathmap? result)
@@ -433,26 +449,28 @@
                                           (seq this-paths) (conj (additional-paths this-paths))
                                           (seq ref-paths) (conj (additional-paths ref-paths)))]
                       results)))]
-    (execute route-tree :call runner [call-path])))
+    (execute route-tree
+             (init-context :call [call-path] env)
+             runner)))
 
 (defn call
   ([router path args queries]
    (call router path args queries {}))
-  ([router path args queries ctx]
-   (last (calls router path args queries ctx))))
+  ([router path args queries env]
+   (last (calls router path args queries env))))
 
 ;; TODO: this name sucks
 (defn handle
   ([router request]
    (handle router request {}))
-  ([router {:keys [method] :as request} ctx]
+  ([router {:keys [method] :as request} env]
    (case method
      :get (let [{:keys [pathsets]} request]
-            (get router pathsets ctx))
+            (get router pathsets env))
      :set (let [{:keys [pathmaps]} request]
-            (set router pathmaps ctx))
+            (set router pathmaps env))
      :call (let [{:keys [path args queries]} request]
-             (call router path args queries ctx)))))
+             (call router path args queries env)))))
 
 (defrecord Router [route-tree])
 
@@ -461,18 +479,18 @@
   (Router. (route-tree routes)))
 
 (defrecord RouterDatasource
-  [router ctx]
+  [router env]
   core/IDataSource
   (get [_ pathsets cb]
     ;; TODO: doesn't impl `:missing`
-    (cb (get router pathsets ctx)))
+    (cb (get router pathsets env)))
   (set [_ pathmaps cb]
-    (cb (set router pathmaps ctx)))
+    (cb (set router pathmaps env)))
   (call [_ path args queries cb]
-    (cb (call router path args queries ctx))))
+    (cb (call router path args queries env))))
 
 (defn as-datasource
   ([router]
    (as-datasource router {}))
-  ([router ctx]
-   (RouterDatasource. router ctx)))
+  ([router env]
+   (RouterDatasource. router env)))
