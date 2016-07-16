@@ -86,18 +86,26 @@
       (additional-paths? x)
       (set-method? x)))
 
+(defn pathmap [path value]
+  (assoc-in {} path value))
+
 (defn pathmap? [x]
   (and (map? x)
        (and (not (path-value? x))
             (not (message? x)))))
 
-
 ;;; KEYS
+
+(defn uuid? [x]
+  #?(:clj (instance? java.util.UUID x)
+     :cljs (or (instance? cljs.core/UUID x)
+               (instance? com.cognitect.transit.types.UUID x))))
 
 (defn key? [x]
   (or (string? x)
       (keyword? x)
-      (integer? x)))
+      (integer? x)
+      (uuid? x)))
 
 (defrecord Range [start end])
 
@@ -263,3 +271,13 @@
                       pathmap)
               [(path-value path pathmap)]))]
     (path-values [] pathmap)))
+
+;; TODO: this has proved useful -- make it robust!
+(defn pull [query]
+  (let [leafs (into [] (remove map? query))
+        paths (for [join (filter map? query)
+                    :let [[key query] (first join)]
+                    paths (pull query)]
+                (into [key] paths))]
+    (cond-> (into [] paths)
+            (seq leafs) (conj [leafs]))))

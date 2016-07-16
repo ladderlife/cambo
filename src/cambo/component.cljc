@@ -1,5 +1,5 @@
 (ns cambo.component
-  (:require [cambo.core :as core]
+  (:require [cambo.core :as core :refer [pull]]
             [cambo.model :as model]
             #?(:cljs [cljsjs.react])))
 
@@ -72,15 +72,6 @@
 
 (defn fragment? [x]
   (instance? Fragment x))
-
-(defn pull [query]
-  (let [leafs (into [] (remove map? query))
-        paths (for [join (filter map? query)
-                    :let [[key query] (first join)]
-                    paths (pull query)]
-                (into [key] paths))]
-    (cond-> (into [] paths)
-            (seq leafs) (conj [leafs]))))
 
 (defn get-fragment [comp name]
   (fragment comp name))
@@ -478,9 +469,15 @@
     (set [(assoc-in {} path pathmap)] (fn [_]))))
 
 (defn call-model
-  [this path args queries]
-  (let [{:keys [call]} (variables* this)
-        queries (cond-> queries
-                        (:this queries) (update :this pull)
-                        (:refs queries) (update :refs pull))]
-    (call path args queries (fn [_]))))
+  ([this path]
+   (call-model this path nil))
+  ([this path args]
+   (call-model this path args {}))
+  ([this path args queries]
+   (call-model this path args queries (fn [_])))
+  ([this path args queries cb]
+   (let [{:keys [call]} (variables* this)
+         queries (cond-> queries
+                         (:this queries) (update :this pull)
+                         (:refs queries) (update :refs pull))]
+     (call path args queries cb))))

@@ -11,6 +11,7 @@
                  [com.cognitect/transit-cljs "0.8.239"]]
   :plugins [[lein-figwheel "0.5.4-3"]
             [lein-cljsbuild "1.1.3"]]
+  :jar-exclusions [#"examples/" #"public/"]
   :profiles {:dev {:dependencies
                    [[org.clojure/clojure "1.8.0"]
                     [org.clojure/clojurescript "1.8.51"]]}
