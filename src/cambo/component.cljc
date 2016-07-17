@@ -68,21 +68,22 @@
   (fragment-names [this])
   (fragment [this name]))
 
-(deftype Fragment [pathsets])
+;; TODO: this caching logic is ugly / spread around / duplicated / etc ... works (I think) but hammock it a bit!
+(defprotocol IFragment
+  (pathsets [this])
+  ;; HACK: this is only here to facilitate caching -- same logic for all fragment types
+  (expand [this]))
 
 (defn fragment? [x]
-  (instance? Fragment x))
+  (satisfies? IFragment x))
 
-(defn get-fragment [comp name]
-  (fragment comp name))
-
-(defn expand-fragment
-  [fragment]
-  (letfn [(expand-pathset [pathset]
+(defn update-fragments
+  [f pathsets]
+  (letfn [(update-pathset [pathset]
             (let [path (into [] (butlast pathset))
                   x (last pathset)]
               (cond
-                (fragment? x) (for [pathset (expand-fragment fragment)]
+                (fragment? x) (for [pathset (f fragment)]
                                 (into path pathset))
                 (core/key? x) [(conj path x)]
                 (vector? x) (let [keys (into [] (filter core/key? x))
@@ -90,31 +91,78 @@
                               (cond-> []
                                       (seq keys) (conj (conj path keys))
                                       (seq fragments) (into (for [fragment fragments
-                                                                  pathset (expand-fragment fragment)]
+                                                                  pathset (f fragment)]
                                                               (into path pathset))))))))]
-    (into [] (mapcat expand-pathset) (.-pathsets fragment))))
+    (into [] (mapcat update-pathset) pathsets)))
 
-(defn fragment-query [root fragment]
-  (into [] (for [pathset (expand-fragment fragment)]
-             (into root pathset))))
+(deftype Fragment [pathsets]
+  IFragment
+  (pathsets [_]
+    pathsets)
+  (expand [this]
+    (if-let [cached-expand (.-cached-expand this)]
+      cached-expand
+      (let [expanded-pathsets (update-fragments expand (pathsets this))]
+        (set! (.-cached-expand this) expanded-pathsets)
+        expanded-pathsets))))
 
-;(defn remove-fragments
-;  [fragment]
-;  (letfn [(remove-from-pathset [pathset]
-;            (let [x (last pathset)]
-;              (cond
-;                (fragment? x) nil
-;                (core/key? x) pathset
-;                (vector? x) (let [keys (into [] (filter core/key? x))]
-;                              (if (empty? keys)
-;                                nil
-;                                (let [path (into [] (butlast pathset))]
-;                                  (conj path keys)))))))]
-;    (into [] (keep remove-from-pathset (.-pathsets fragment)))))
-;
-;(defn local-query [root fragment]
-;  (for [pathset (remove-fragments fragment)]
-;    (into root pathset)))
+(deftype RecursiveContainerFragment [comp name count]
+  IFragment
+  (pathsets [this]
+    (if-let [cached-pathsets (.-cached-pathsets this)]
+      cached-pathsets
+      (let [fragment (fragment comp name)
+            pathsets (update-fragments (fn [fragment]
+                                         (if (instance? RecursiveContainerFragment fragment)
+                                           (if (> count 0)
+                                             [[[(RecursiveContainerFragment. (.-comp fragment)
+                                                                             (.-name fragment)
+                                                                             (dec count))]]]
+                                             [])
+                                           [[[fragment]]]))
+                                       (pathsets fragment))]
+        (set! (.-cached-pathsets this) pathsets)
+        pathsets)))
+  (expand [this]
+    (if-let [cached-expand (.-cached-expand this)]
+      cached-expand
+      (let [expanded-pathsets (update-fragments expand (pathsets this))]
+        (set! (.-cached-expand this) expanded-pathsets)
+        expanded-pathsets))))
+
+(deftype ContainerFragment [comp name]
+  IFragment
+  (pathsets [this]
+    (if-let [cached-pathsets (.-cached-pathsets this)]
+      cached-pathsets
+      (let [pathsets (pathsets (fragment comp name))]
+        (set! (.-cached-pathsets this) pathsets)
+        pathsets)))
+  (expand [this]
+    (if-let [cached-expand (.-cached-expand this)]
+      cached-expand
+      (let [expanded-pathsets (update-fragments expand (pathsets this))]
+        (set! (.-cached-expand this) expanded-pathsets)
+        expanded-pathsets))))
+
+(def *fragment-cache* (atom {}))
+
+(defn get-fragment
+  ;; curiosity: overhead of always `swap!` vs deref & check and only `swap!` if not there
+  ([comp name]
+   (let [cache (swap! *fragment-cache*
+                      (fn [cache]
+                        (if (contains? cache [comp name])
+                          cache
+                          (assoc cache [comp name] (ContainerFragment. comp name)))))]
+     (get cache [comp name])))
+  ([comp name count]
+   (let [cache (swap! *fragment-cache*
+                      (fn [cache]
+                        (if (contains? cache [comp name count])
+                          cache
+                          (assoc cache [comp name count] (RecursiveContainerFragment. comp name count)))))]
+     (get cache [comp name count]))))
 
 (defn local-query [root fragment]
   (letfn [(stub-fragments [pathset]
@@ -135,7 +183,7 @@
   (into [] (for [name (fragment-names container)
                  :let [fragment (get-fragment container name)
                        query (get queries name)
-                       pathsets (expand-fragment fragment)]
+                       pathsets (expand fragment)]
                  pathset pathsets]
              (into query pathset))))
 

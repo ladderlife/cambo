@@ -118,8 +118,8 @@
             (let [todo-id (:todo/id args)
                   idx (remove-user-todo users id todo-id)]
               (delete-todo todos todo-id)
-              [(core/invalidate [:user/by-id id :user/todos])
-               (core/invalidate [:todos/by-id todo-id :user/todos idx])]))}])
+              [(router/invalidate [:user/by-id id :user/todos])
+               (router/invalidate [:todos/by-id todo-id :user/todos idx])]))}])
 
 ;; ROUTER
 

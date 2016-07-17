@@ -1,6 +1,6 @@
 (ns examples.todo
   (:require-macros [cambo.component.macros :refer [defcomponent defcontainer]])
-  (:require [cambo.component :as comp :refer [props get-fragment expand-fragment]]
+  (:require [cambo.component :as comp :refer [props get-fragment]]
             [cambo.core :as core]
             [cambo.http :refer [http-datasource]]
             [cambo.model :as model]
@@ -113,6 +113,24 @@
                              (todo-list {:user user})))))
 
 (def todo-app (comp/factory TodoApp))
+
+(defcontainer Answer
+              :fragments {:answer [:answer/type
+                                   :answer/state
+                                   :answer/value]}
+              (render [this] nil))
+
+(defcontainer Field
+              :fragments {:question (fn [_]
+                                      [:question/id
+                                       :question/type
+                                       {:question/answer [(get-fragment Answer :answer)]}
+                                       {:question/questions [{(core/range 0 10) [(get-fragment Field :question 4)]}]}])}
+              (render [this] nil))
+
+(println (time (comp/expand (get-fragment Field :question))))
+
+(println (time (comp/expand (get-fragment Field :question))))
 
 (def model (model/model {:datasource (http-datasource "http://localhost:4000/cambo")}))
 
