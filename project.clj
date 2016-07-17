@@ -21,7 +21,8 @@
                          [clj-http "2.2.0"]
                          [cheshire "5.6.2"]
                          [environ "1.0.3"]
-                         [ring "1.5.0"]]}}
+                         [ring "1.5.0"]
+                         [criterium "0.4.4"]]}}
   :cljsbuild {:builds [{:id "dev"
                         :source-paths ["src"]
                         :figwheel true

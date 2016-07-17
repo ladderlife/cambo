@@ -5,10 +5,47 @@
 
 ;;; ROUTES
 
-;; TODO: is this a legit way to make a unique value? (don't want keyword -- clash with `keys`)
-(def RANGES (symbol "RANGES"))
-(def INTEGERS (symbol "INTEGERS"))
-(def KEYS (symbol "KEYS"))
+(defprotocol IRouteKey
+  (strip [this keyset]))
+
+(defn strip-collect
+  [route-key coll]
+  (reduce (fn [[int diff] keyset]
+            (let [[int' diff'] (strip route-key keyset)]
+              [(into int int')
+               (into diff diff')]))
+          [[] []]
+          coll))
+
+(def KEYS
+  (reify
+    IRouteKey
+    (strip [this keyset]
+      (if (vector? keyset)
+        [keyset []]
+        [[keyset] []]))))
+
+(def INTEGERS
+  (reify
+    IRouteKey
+    (strip [this keyset]
+      (cond
+        (integer? keyset) [[keyset] []]
+        (core/range? keyset) [[keyset] []]
+        (core/key? keyset) [[] [keyset]]
+        (vector? keyset) (strip-collect this keyset)
+        :else (strip-collect this (core/keys keyset))))))
+
+(def RANGES
+  (reify
+    IRouteKey
+    (strip [this keyset]
+      (cond
+        (integer? keyset) [[keyset] []]
+        (core/range? keyset) [[keyset] []]
+        (core/key? keyset) [[] [keyset]]
+        (vector? keyset) (strip-collect this keyset)
+        :else (strip-collect this (core/keys keyset))))))
 
 (defn virtual-key? [x]
   (or (= RANGES x)
@@ -68,7 +105,6 @@
                           (throw (ex-info "route conflict" {:hash hash})))
                         (conj hashes hash))
                       #{}))))
-
 
 (defonce route-ids (atom 0))
 (def id-key ::id)
@@ -156,49 +192,71 @@
                                    reduced))]
     collapsed))
 
-(defn match-virtual? [virtual key]
-  (condp = virtual
-    KEYS true
-    INTEGERS (integer? key)
-    RANGES (integer? key)
-    (= key virtual)))
+(defn strip-primitive
+  [prim keyset]
+  (cond
+    (= prim keyset) [[keyset] []]
+    (vector? keyset) (strip-collect prim keyset)
+    :else [[] [keyset]]))
 
-(defn difference [keyset virtual]
-  (->> (core/keys keyset)
-       (remove (fn [key]
-                 (some #(match-virtual? % key) (route-keys virtual))))))
+(extend-protocol IRouteKey
+  clojure.lang.Keyword
+  (strip [this keyset]
+    (strip-primitive this keyset))
+  java.lang.String
+  (strip [this keyset]
+    (strip-primitive this keyset))
+  clojure.lang.Symbol
+  (strip [this keyset]
+    (strip-primitive this keyset))
+  java.lang.Long
+  (strip [this keyset]
+    (cond
+      (= this keyset) [[keyset] []]
+      (core/range? keyset) (let [{:keys [start end]} keyset]
+                             (cond
+                               (= this start) [[this] [(core/range (inc start) end)]]
+                               (< start this (dec end)) [[this] [(core/range start this)
+                                                                 (core/range (inc this) end)]]
+                               (= this (dec end)) [[this] [(core/range start this)]]
+                               :else [[] [keyset]]))
+      (vector? keyset) (strip-collect this keyset)
+      :else [[] [keyset]]))
+  clojure.lang.PersistentVector
+  (strip [this keyset]
+    (reduce (fn [[int diff] route-key]
+              (let [[int' diff'] (strip route-key diff)]
+                [(into int int')
+                 diff']))
+            [[] (if (vector? keyset)
+                  keyset
+                  [keyset])]
+            this)))
 
-(defn intersection [keyset virtual]
-  (->> (core/keys keyset)
-       (filter (fn [key]
-                 (some #(match-virtual? % key) (route-keys virtual))))))
-
-(defn path-intersection [[ks & path] [virtual & virtual-path]]
-  (let [int (core/keyset (intersection ks virtual))]
-    (when int
-      (cond-> [int]
-              (seq path) (into (path-intersection path virtual-path))))))
-
-(defn path-difference [[ks & path] [virtual & virtual-path]]
-  (let [diff (core/keyset (difference ks virtual))
-        int (core/keyset (intersection ks virtual))]
-    (cond-> []
-            (seq (core/keys diff)) (conj (into [diff] path))
-            (and int (seq virtual-path)) (into (map (partial into [int])
-                                                    (path-difference path virtual-path))))))
+(defn strip-path
+  "assumes there is an intersection"
+  [[routekey & routeset] [keyset & pathset :as all]]
+  (let [[key-int key-diffs] (strip routekey keyset)
+        key-int (if (= 1 (count key-int))
+                  (first key-int)
+                  key-int)
+        diffs (mapv (fn [key-diff]
+                     (into [key-diff] pathset))
+                   key-diffs)]
+    (if (seq routeset)
+      (let [[path-int path-diffs] (strip-path routeset pathset)]
+        [(into [key-int] path-int)
+         (into diffs
+               (map (fn [diff] (into [key-int] diff)) path-diffs))])
+      [[key-int] diffs])))
 
 (defn intersects?
-  [[ks & path] [virtual & virtual-path]]
-  (let [int (intersection ks virtual)]
+  [[keyset & pathset] [routekey & routeset]]
+  (let [[int _] (strip routekey keyset)]
     (cond
       (empty? int) false
-      (seq path) (intersects? path virtual-path)
+      (seq pathset) (intersects? pathset routeset)
       :else true)))
-
-;; TODO: steal the falcor strip impl -- this was dumb idea & slow
-(defn strip-path [pathset routeset]
-  [(path-intersection pathset routeset)
-   (path-difference pathset routeset)])
 
 (defn key-precedence [key]
   (condp = key
@@ -221,7 +279,7 @@
       (if (and match (seq pathsets))
         (let [[path-matches remaining-pathsets] (loop [pathsets pathsets path-matches [] remaining-pathsets []]
                                                   (if-let [pathset (first pathsets)]
-                                                    (let [[intersection differences] (strip-path pathset virtual)]
+                                                    (let [[intersection differences] (strip-path virtual pathset)]
                                                       (if intersection
                                                         (recur (rest pathsets)
                                                                (conj path-matches {:path intersection
@@ -357,17 +415,14 @@
           (execute* [{:keys [pathsets] :as context}]
             (lazy-seq
               (if (seq pathsets)
-                (let [results (mapcat (partial match-and-run context) pathsets)
+                (let [context (assoc context :pathsets [])
+                      results (mapcat (partial match-and-run context) pathsets)
                       ;; expanding values -> value will be impl dependant
                       ;; here it is just a seq
                       results (for [[match values] results
                                     value values]
                                 [match value])
-                      context (-> context
-                                  ;; clear matched pathsets
-                                  (assoc :pathsets [])
-                                  ;; merge results / add new pathsets for refs
-                                  (merge-results results))]
+                      context (merge-results context results)]
                   (cons (context-result context)
                         (execute* context)))
                 nil)))]

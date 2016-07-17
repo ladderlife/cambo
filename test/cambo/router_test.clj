@@ -38,50 +38,148 @@
                              :get true}]
                  (route-tree [route1 route2])))))
 
+(deftest strip-keys-test
+  (is (= [[:a] []]
+         (strip KEYS :a)))
+  (is (= [["a"] []]
+         (strip KEYS ["a"])))
+  (is (= [[1] []]
+         (strip KEYS 1)))
+  (is (= [[1] []]
+         (strip KEYS [1])))
+  (is (= [[1 2 3] []]
+         (strip KEYS [1 2 3])))
+  (is (= [[1 :a 2 :b 3 :c :d] []]
+         (strip KEYS [1 :a 2 :b 3 :c :d])))
+  (is (= [[(core/range 0 10)] []]
+         (strip KEYS (core/range 0 10))))
+  (is (= [[(core/range 0 10) (core/range 5 15)] []]
+         (strip KEYS [(core/range 0 10) (core/range 5 15)])))
+  (is (= [[(core/range 0 10) :a (core/range 5 15) :b 1 2] []]
+         (strip KEYS [(core/range 0 10) :a (core/range 5 15) :b 1 2]))))
+
+(deftest strip-integers-test
+  (is (= [[1] []]
+         (strip INTEGERS 1)))
+  (is (= [[1] []]
+         (strip INTEGERS [1])))
+  (is (= [[] [:a]]
+         (strip INTEGERS :a)))
+  (is (= [[]  ["a"]]
+         (strip INTEGERS ["a"])))
+  (is (= [[1 2 3] []]
+         (strip INTEGERS [1 2 3])))
+  (is (= [[1 2 3] [:a :b :c :d]]
+         (strip INTEGERS [1 :a 2 :b 3 :c :d])))
+  (is (= [[(core/range 0 10)] []]
+         (strip INTEGERS (core/range 0 10))))
+  (is (= [[(core/range 0 10) (core/range 5 15)] []]
+         (strip INTEGERS [(core/range 0 10) (core/range 5 15)])))
+  (is (= [[(core/range 0 10) (core/range 5 15) 1 2 ] [:a :b]]
+         (strip INTEGERS [(core/range 0 10) :a (core/range 5 15) :b 1 2]))))
+
+(deftest strip-ranges-test
+  (is (= [[1] []]
+         (strip RANGES 1)))
+  (is (= [[1] []]
+         (strip RANGES [1])))
+  (is (= [[] [:a]]
+         (strip RANGES :a)))
+  (is (= [[]  ["a"]]
+         (strip RANGES ["a"])))
+  (is (= [[1 2 3] []]
+         (strip RANGES [1 2 3])))
+  (is (= [[1 2 3] [:a :b :c :d]]
+         (strip RANGES [1 :a 2 :b 3 :c :d])))
+  (is (= [[(core/range 0 10)] []]
+         (strip RANGES (core/range 0 10))))
+  (is (= [[(core/range 0 10) (core/range 5 15)] []]
+         (strip RANGES [(core/range 0 10) (core/range 5 15)])))
+  (is (= [[(core/range 0 10) (core/range 5 15) 1 2 ] [:a :b]]
+         (strip RANGES [(core/range 0 10) :a (core/range 5 15) :b 1 2]))))
+
+(deftest strip-keyword-test
+  (is (= [[:a] []]
+         (strip :a :a)))
+  (is (= [[:a] []]
+         (strip :a [:a])))
+  (is (= [[] ["a"]]
+         (strip :a "a")))
+  (is (= [[] ["a" 1 (core/range 1 10)]]
+         (strip :a ["a" 1 (core/range 1 10)]))))
+
+(deftest strip-long-test
+  (is (= [[] [(core/range 5 10)]]
+         (strip 1 (core/range 5 10))))
+  (is (= [[] [(core/range 5 10)]]
+         (strip 15 (core/range 5 10))))
+  (is (= [[0] [(core/range 1 10)]]
+         (strip 0 (core/range 0 10))))
+  (is (= [[] [(core/range 0 10)]]
+         (strip 10 (core/range 0 10))))
+  (is (= [[1] [(core/range 0 1) (core/range 2 10)]]
+         (strip 1 (core/range 0 10))))
+  (is (= [[5] [(core/range 0 5) (core/range 6 10)]]
+         (strip 5 (core/range 0 10))))
+  (is (= [[8] [(core/range 0 8) (core/range 9 10)]]
+         (strip 8 (core/range 0 10))))
+  (is (= [[9] [(core/range 0 9)]]
+         (strip 9 (core/range 0 10)))))
+
+(deftest strip-vector-test
+  (is (= [[1 8] [(core/range 0 1) (core/range 2 8) (core/range 9 10)]]
+         (strip [1 8] (core/range 0 10))))
+  (is (= [[1 8] [2 3 4 5 6 7 9 10]]
+         (strip [1 8] [1 2 3 4 5 6 7 8 9 10])))
+  (is (= [[8] ["a" :b]]
+         (strip [1 8] ["a" :b 8]))))
+
 (deftest strip-path-test
   (testing "simple keys"
     (is (= [[:a :b :c]
             []]
            (strip-path [:a :b :c]
-                       [:a :b :c]))))
+                         [:a :b :c]))))
   (testing "simple keys with route token"
     (is (= [[:a :b :c]
             []]
-           (strip-path [:a :b :c]
-                       [:a KEYS :c]))))
+           (strip-path [:a KEYS :c]
+                       [:a :b :c]))))
   (testing "path with array args"
     (is (= [[:a [:b :d] :c]
             []]
-           (strip-path [:a [:b :d] :c]
-                       [:a KEYS :c]))))
+           (strip-path [:a KEYS :c]
+                       [:a [:b :d] :c]))))
   (testing "path with range args"
-    (is (= [[:a [0 1 2 3 4 5] :c]
+    (is (= [[:a (range 0 6) :c]
             []]
-           (strip-path [:a (range 0 6) :c]
-                       [:a RANGES :c]))))
+           (strip-path [:a RANGES :c]
+                       [:a (range 0 6) :c]))))
   (testing "path with array keys"
     (is (= [[:a :b :c]
             [[:a :d :c]]]
-           (strip-path [:a [:b :d] :c]
-                       [:a :b :c]))))
+           (strip-path [:a :b :c]
+                       [:a [:b :d] :c]))))
   (testing "path with range"
     (is (= [[:a 1 :c]
-            [[:a [0 2 3 4 5] :c]]]
-           (strip-path [:a (range 0 6) :c]
-                       [:a 1 :c]))))
+            [[:a (range 0 1) :c]
+             [:a (range 2 6) :c]]]
+           (strip-path [:a 1 :c]
+                       [:a (range 0 6) :c]))))
   (testing "path with array range"
     (is (= [[:a 1 :c]
-            [[:a [0 2 5] :c]]]
-           (strip-path [:a [(range 0 3) (range 5 6)] :c]
-                       [:a 1 :c]))))
+            [[:a (range 0 1) :c]
+             [:a (range 2 3) :c]
+             [:a (range 5 6) :c]]]
+           (strip-path [:a 1 :c]
+                       [:a [(range 0 3) (range 5 6)] :c]))))
   (testing "path with complement partial match"
     (is (= [[:a :c :e]
             [[:b [:c :d] [:e :f]]
              [:a :d [:e :f]]
              [:a :c :f]]]
-           (strip-path [[:a :b] [:c :d] [:e :f]]
-                       [:a :c :e])))))
-
+           (strip-path [:a :c :e]
+                       [[:a :b] [:c :d] [:e :f]])))))
 
 (deftest get-test
   (let [noop (fn [& _])
