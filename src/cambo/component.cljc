@@ -115,9 +115,13 @@
             pathsets (update-fragments (fn [fragment]
                                          (if (instance? RecursiveContainerFragment fragment)
                                            (if (> count 0)
-                                             [[[(RecursiveContainerFragment. (.-comp fragment)
-                                                                             (.-name fragment)
-                                                                             (dec count))]]]
+                                             (do
+                                               (assert (and (= comp (.-comp fragment))
+                                                            (= name (.-name fragment)))
+                                                       "recursive fragment can't contain other recursive fragments")
+                                               [[[(RecursiveContainerFragment. (.-comp fragment)
+                                                                               (.-name fragment)
+                                                                               (dec count))]]])
                                              [])
                                            [[[fragment]]]))
                                        (pathsets fragment))]
