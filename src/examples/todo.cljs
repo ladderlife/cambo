@@ -1,5 +1,5 @@
 (ns examples.todo
-  (:require-macros [cambo.component.macros :refer [defcomponent defcontainer]])
+  (:require-macros [cambo.component.macros :refer [defcomponent defcontainer profile]])
   (:require [cambo.component :as comp :refer [props get-fragment]]
             [cambo.core :as core]
             [cambo.http :refer [http-datasource]]
@@ -128,9 +128,12 @@
                                        {:question/questions [{(core/range 0 10) [(get-fragment Field :question 4)]}]}])}
               (render [this] nil))
 
-(println (time (comp/expand (get-fragment Field :question))))
+(profile "cambo/expand"
+         (comp/expand (get-fragment Field :question)))
 
-(println (time (comp/expand (get-fragment Field :question))))
+(let [cb (profile "cambo/expand")
+      _ (comp/expand (get-fragment Field :question))]
+  (cb))
 
 (def model (model/model {:datasource (http-datasource "http://localhost:4000/cambo")}))
 

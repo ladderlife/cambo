@@ -114,3 +114,19 @@
        (def ~name (let [container# (cambo.component/create-container ~component-name ~specs)]
                     (set! (.-displayName container#) ~display-name)
                     container#)))))
+
+(defmacro profile
+  ([name]
+   `(let [start# (js/window.performance.now)]
+      (fn []
+        (let [duration# (- (js/window.performance.now) start#)]
+          (js/window.requestAnimationFrame (fn []
+                                             (swap! cambo.component/*profile* update ~name (fnil conj []) duration#)))))))
+  ([name & body]
+   `(let [start# (js/window.performance.now)
+          result# (do ~@body)
+          duration# (- (js/window.performance.now) start#)]
+      (js/window.requestAnimationFrame (fn []
+                                         (when cambo.component/*profile*
+                                           (swap! cambo.component/*profile* update ~name (fnil conj []) duration#))))
+      result#)))

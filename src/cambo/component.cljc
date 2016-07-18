@@ -1,7 +1,20 @@
 (ns cambo.component
+  #?(:cljs (:require-macros [cambo.component.macros :refer [profile]]))
   (:require [cambo.core :as core :refer [pull]]
             [cambo.model :as model]
             #?(:cljs [cljsjs.react])))
+
+(def *profile* (atom {}))
+
+(defn ^:export report-profiling
+  []
+  (doseq [[name durations] @*profile*
+          :let [max (apply max durations)
+                min (apply min durations)
+                sum (reduce + durations)
+                count (count durations)
+                avg (/ sum count)]]
+    (println name "avg" avg "max" max "min" min "count" count)))
 
 (def props-key "cambo$props")
 
@@ -325,60 +338,66 @@
                Object
 
                (run-variables [this partial-vars cb force?]
-                 (let [{:keys [route model]} (context this)
-                       {:keys [variables]} (state this)
-                       variables (get (.-pending this) :variables variables)
-                       variables (merge variables partial-vars)
-                       next-variables (prepare-variables variables route)
-                       pointers (create-fragment-pointers fragments (props this) next-variables)
-                       pathsets (into [] (mapcat :pathsets (vals pointers)))
-                       on-readystate (fn [ready]
-                                       (when ready
-                                         (set! (.-pending this) nil)
-                                         (set! (.-fragment-pointers this) pointers)
-                                         (.update-subscription this (context this))
-                                         (when (.-mounted this)
-                                           (set-state this (fn [{:keys [cambo/variables]}]
-                                                             {:query-data (.get-query-data this (props this) (context this))
-                                                              :variables variables
-                                                              :cambo/variables (assoc variables :variables next-variables)}))))
-                                       (when cb
-                                         (cb ready)))]
-                   (if force?
-                     (model/force model pathsets on-readystate)
-                     (model/prime model pathsets on-readystate))
-                   (set! (.-pending this) {:variables variables})))
+                 (profile "cambo.container#run-varibles"
+                          (let [{:keys [route model]} (context this)
+                                {:keys [variables]} (state this)
+                                variables (get (.-pending this) :variables variables)
+                                variables (merge variables partial-vars)
+                                next-variables (prepare-variables variables route)
+                                pointers (create-fragment-pointers fragments (props this) next-variables)
+                                pathsets (into [] (mapcat :pathsets (vals pointers)))
+                                on-readystate (fn [ready]
+                                                (profile "cambo.container#run-variables::on-readystate"
+                                                         (when ready
+                                                           (set! (.-pending this) nil)
+                                                           (set! (.-fragment-pointers this) pointers)
+                                                           (.update-subscription this (context this))
+                                                           (when (.-mounted this)
+                                                             (set-state this (fn [{:keys [cambo/variables]}]
+                                                                               {:query-data (.get-query-data this (props this) (context this))
+                                                                                :variables variables
+                                                                                :cambo/variables (assoc variables :variables next-variables)})))))
+                                                (when cb
+                                                  (cb ready)))]
+                            (if force?
+                              (model/force model pathsets on-readystate)
+                              (model/prime model pathsets on-readystate))
+                            (set! (.-pending this) {:variables variables}))))
 
                (initialize [this {:keys [cambo/variables]} props {:keys [route] :as context} vars]
-                 (let [next-vars (prepare-variables vars route)]
-                   (.update-fragment-pointers this props next-vars)
-                   (.update-subscription this context)
-                   {:query-data (.get-query-data this props context)
-                    :variables vars
-                    :cambo/variables (assoc variables :variables next-vars)}))
+                 (profile "cambo.container#initialize"
+                          (let [next-vars (prepare-variables vars route)]
+                            (.update-fragment-pointers this props next-vars)
+                            (.update-subscription this context)
+                            {:query-data (.get-query-data this props context)
+                             :variables vars
+                             :cambo/variables (assoc variables :variables next-vars)})))
 
                (update-fragment-pointers [this props vars]
-                 (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars)))
+                 (profile "cambo.container#update-fragment-pointers"
+                          (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars))))
 
                (update-subscription [this {:keys [model]}]
-                 (let [pointers (.-fragment-pointers this)
-                       pathsets (into [] (mapcat :pathsets (vals pointers)))
-                       subscription (if-let [subscription (.-subscription this)]
-                                      (.update subscription model pathsets)
-                                      (container-subscription model pathsets (fn []
-                                                                               (.handle-fragment-data-update this))))]
-                   (set! (.-subscription this) subscription)))
+                 (profile "cambo.container#update-subscription"
+                          (let [pointers (.-fragment-pointers this)
+                                pathsets (into [] (mapcat :pathsets (vals pointers)))
+                                subscription (if-let [subscription (.-subscription this)]
+                                               (.update subscription model pathsets)
+                                               (container-subscription model pathsets (fn []
+                                                                                        (.handle-fragment-data-update this))))]
+                            (set! (.-subscription this) subscription))))
 
                (get-query-data [this props {:keys [model]}]
-                 (let [pointers (.-fragment-pointers this)
-                       pathsets (mapcat :pathsets (vals pointers))
-                       graph (-> model model/with-path-info (model/get-cache pathsets))
-                       query-data (into {} (map (fn [[name {:keys [root]}]]
-                                                     ;; how would this happen?
-                                                     ;:when (get props name)
-                                                  [name (get-in graph root)])
-                                                pointers))]
-                   query-data))
+                 (profile "cambo.container#get-query-data"
+                          (let [pointers (.-fragment-pointers this)
+                                pathsets (mapcat :pathsets (vals pointers))
+                                graph (-> model model/with-path-info (model/get-cache pathsets))
+                                query-data (into {} (map (fn [[name {:keys [root]}]]
+                                                           ;; how would this happen?
+                                                           ;:when (get props name)
+                                                           [name (get-in graph root)])
+                                                         pointers))]
+                            query-data)))
 
                (handle-fragment-data-update [this]
                  (when (.-mounted this)
@@ -400,24 +419,25 @@
                    (dispose sub)))
 
                (shouldComponentUpdate [this next-props next-state next-context]
-                 (if (not= (.-children next-props)
-                           (.. this -props -children))
-                   false
-                   (let [update-props (fn [props]
-                                        (reduce (fn [props key]
-                                                  (let [path (get-path props key)]
-                                                    (assoc props key path)))
-                                                props
-                                                (keys fragments)))
-                         current-props (update-props (props this))
-                         current-state (state this)
-                         current-context (context this)
-                         next-props (update-props (get-props next-props))
-                         next-state (get-state next-state)
-                         next-context (get-context next-context)]
-                     (or (not= current-props next-props)
-                         (not= current-state next-state)
-                         (not= current-context next-context)))))
+                 (profile "cambo.container#shouldComponentUpdate"
+                          (if (not= (.-children next-props)
+                                    (.. this -props -children))
+                            false
+                            (let [update-props (fn [props]
+                                                 (reduce (fn [props key]
+                                                           (let [path (get-path props key)]
+                                                             (assoc props key path)))
+                                                         props
+                                                         (keys fragments)))
+                                  current-props (update-props (props this))
+                                  current-state (state this)
+                                  current-context (context this)
+                                  next-props (update-props (get-props next-props))
+                                  next-state (get-state next-state)
+                                  next-context (get-context next-context)]
+                              (or (not= current-props next-props)
+                                  (not= current-state next-state)
+                                  (not= current-context next-context))))))
 
                (render [this]
                  (let [{:keys [query-data cambo/variables]} (state this)
