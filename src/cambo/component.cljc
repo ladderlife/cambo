@@ -23,16 +23,20 @@
   (aget props props-key))
 
 (defn props
-  [comp]
-  (get-props (.-props comp)))
+  ([comp]
+   (get-props (.-props comp)))
+  ([comp key]
+   (get (get-props (.-props comp)) key)))
 
 #?(:cljs (defn ->props
-           [{:keys [key] :as props}]
+           [{:keys [key ref] :as props}]
            (let [js-props (js-obj props-key props)]
              ;; TODO: nicer way to do this?
-             ;; TODO: any other keys require this?
              ;; pull key from props into component react base props
              (when key (aset js-props "key" key))
+             ;; we pass the component as the ref -- not the container itself
+             ;; if we ever need the container itself, can revisit this
+             (when ref (aset js-props "ref" #(ref (some-> % .-component))))
              js-props)))
 
 (def state-key "cambo$state")
@@ -354,9 +358,10 @@
                                                            (.update-subscription this (context this))
                                                            (when (.-mounted this)
                                                              (set-state this (fn [{:keys [cambo/variables]}]
-                                                                               {:query-data (.get-query-data this (props this) (context this))
-                                                                                :variables variables
-                                                                                :cambo/variables (assoc variables :variables next-variables)})))))
+                                                                               (profile "cambo.container#run-variables::set-state"
+                                                                                        {:query-data (.get-query-data this (props this) (context this))
+                                                                                         :variables variables
+                                                                                         :cambo/variables (assoc variables :variables next-variables)}))))))
                                                 (when cb
                                                   (cb ready)))]
                             (if force?
@@ -446,7 +451,8 @@
                        children (.. this -props -children)]
                    (js/React.createElement component
                                            (js-obj props-key component-props
-                                                   variables-key variables)
+                                                   variables-key variables
+                                                   "ref" #(set! (.-component this) %))
                                            children))))
 
              container)))

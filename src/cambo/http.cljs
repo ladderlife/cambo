@@ -35,27 +35,35 @@
     (transit/read reader transit)))
 
 (defn http-send
-  [url request cb]
-  (.send XhrIo url
-         (fn [_]
-           (this-as this
-             ;; TODO: handle errors
-             (when (= (.getStatus this) 200)
-               (let [response (->edn (.getResponseText this))]
-                 (cb response)))))
-         "POST" (->transit request)
-         #js {"Content-Type" "application/transit+json"}))
+  [url request headers cb]
+  (let [default-headers {"Content-Type" "application/transit+json"}
+        headers (cond-> default-headers
+                     (fn? headers) (merge (headers request))
+                     (map? headers) (merge headers))
+        headers (clj->js headers)]
+    (.send XhrIo url
+           (fn [_]
+             (this-as this
+               ;; TODO: handle errors
+               (when (= (.getStatus this) 200)
+                 (let [response (->edn (.getResponseText this))]
+                   (cb response)))))
+           "POST"
+           (->transit request)
+           headers)))
 
 (defrecord HttpDataSource
-  [url]
+  [url opts]
   core/IDataSource
   (get [_ pathsets cb]
-    (http-send url {:method :get :pathsets pathsets} cb))
+    (http-send url {:method :get :pathsets pathsets} opts cb))
   (set [_ pathmaps cb]
-    (http-send url {:method :set :pathmaps pathmaps} cb))
+    (http-send url {:method :set :pathmaps pathmaps} opts cb))
   (call [_ path args queries cb]
-    (http-send url {:method :call :path path :args args :queries queries} cb)))
+    (http-send url {:method :call :path path :args args :queries queries} opts cb)))
 
 (defn http-datasource
-  [url]
-  (HttpDataSource. url))
+  ([url]
+   (HttpDataSource. url nil))
+  ([url opts]
+   (HttpDataSource. url opts)))

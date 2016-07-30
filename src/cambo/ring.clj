@@ -1,6 +1,7 @@
 (ns cambo.ring
-  (:require [cognitect.transit :as transit])
-  (:import [java.io ByteArrayOutputStream ByteArrayInputStream]
+  (:require [cognitect.transit :as transit]
+            [cambo.core])
+  (:import [java.io ByteArrayOutputStream]
            [cambo.core Range Atom Ref]))
 
 (def read-handlers

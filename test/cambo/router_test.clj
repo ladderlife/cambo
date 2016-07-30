@@ -359,7 +359,10 @@
                                                       (let [friend-id (:user/id args)]
                                                         (swap! users assoc-in [id :user/friend] friend-id)
                                                         [(core/path-value [:user/by-id id :user/friend]
-                                                                          (ref [:user/by-id friend-id]))]))}])]
+                                                                          (ref [:user/by-id friend-id]))]))}]
+                                            {:call (fn [runner]
+                                                     (fn [match context]
+                                                       (runner match context)))})]
                          [users router]))]
     (testing "can call a mutation"
       (let [[users router] (users-router)

@@ -138,7 +138,7 @@
                      {:status 200}
                      (handler request))]
       (update response :headers merge {"Access-Control-Allow-Origin" "*"
-                                       "Access-Control-Allow-Headers" "Content-Type"}))))
+                                       "Access-Control-Allow-Headers" "Content-Type, X-Csrf-Token"}))))
 
 (def cambo-handler' (-> cambo-handler wrap-cambo wrap-cors))
 

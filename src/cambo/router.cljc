@@ -301,11 +301,12 @@
 
 (defn executable-matches
   [matches pathset]
-  (letfn [(collect-matches [{:keys [virtual] :as match} pathsets]
+  (letfn [(collect-matches [{:keys [virtual handler] :as match} pathsets]
             (reduce (fn [[results pathsets] pathset]
                       (if (intersects? virtual pathset)
-                        (let [[intersection differences] (strip-path virtual pathset)]
-                          [(conj results (assoc match :pathset (conform-path virtual intersection)))
+                        (let [[intersection differences] (strip-path virtual pathset)
+                              route (:route handler)]
+                          [(conj results (assoc match :pathset (conform-path route intersection)))
                            (into pathsets differences)])
                         [results (conj pathsets pathset)]))
                     [[] []]
@@ -338,10 +339,10 @@
 (defn indices [ranges]
   (mapcat core/keys ranges))
 
-(defprotocol RouteResult
+(defprotocol IRouteResult
   (update-context [this context match]))
 
-(extend-protocol RouteResult
+(extend-protocol IRouteResult
   cambo.core.PathValue
   (update-context [{:keys [path value] :as pv} context {:keys [suffix]}]
     (let [context (-> context
@@ -351,8 +352,15 @@
               (and (core/ref? value) (seq suffix))
               (update :pathsets conj (into (:path value) suffix)))))
 
-  ;; TODO: this is probably not sufficient ;p
+  ;; pathmaps -- add types as necessary
   clojure.lang.PersistentArrayMap
+  (update-context [pathmap context match]
+    (reduce (fn [context pv]
+              (update-context pv context match))
+            context
+            (core/pathmap-values pathmap)))
+
+  clojure.lang.PersistentHashMap
   (update-context [pathmap context match]
     (reduce (fn [context pv]
               (update-context pv context match))
@@ -360,7 +368,7 @@
             (core/pathmap-values pathmap))))
 
 (deftype Invalidate [path]
-  RouteResult
+  IRouteResult
   (update-context [_ context _]
     (update context :invalidate conj path)))
 
@@ -368,7 +376,7 @@
   (Invalidate. path))
 
 (deftype AdditionalPaths [pathsets]
-  RouteResult
+  IRouteResult
   (update-context [_ context _]
     (update context :pathsets into pathsets)))
 
@@ -376,7 +384,7 @@
   (AdditionalPaths. paths))
 
 (deftype SetMethod [method]
-  RouteResult
+  IRouteResult
   (update-context [_ context _]
     (assoc context :method method)))
 
@@ -428,12 +436,12 @@
                 nil)))]
     (execute* context)))
 
-(defn gets [{:keys [route-tree]} pathsets env]
+(defn gets [{:keys [route-tree get-middleware]} pathsets env]
   (letfn [(runner [{:keys [handler pathset]} {:keys [env]}]
             ((:get handler) pathset env))]
     (execute route-tree
              (init-context :get pathsets env)
-             runner)))
+             (cond-> runner get-middleware get-middleware))))
 
 (defn get
   ([router pathsets]
@@ -441,7 +449,7 @@
   ([router pathsets env]
    (last (gets router pathsets env))))
 
-(defn sets [{:keys [route-tree]} pathmaps env]
+(defn sets [{:keys [route-tree set-middleware]} pathmaps env]
   (let [{:keys [graph paths]} (graph/set {} pathmaps)
         ;; TODO: not sure if this is necessary
         paths (core/expand-pathsets paths)]
@@ -464,7 +472,7 @@
       (let [pathsets (core/collapse paths)]
         (execute route-tree
                  (init-context :set pathsets env)
-                 runner)))))
+                 (cond-> runner set-middleware set-middleware))))))
 
 (defn set
   ([router pathmaps]
@@ -472,7 +480,7 @@
   ([router pathmaps env]
    (last (sets router pathmaps env))))
 
-(defn calls [{:keys [route-tree]} call-path args queries env]
+(defn calls [{:keys [route-tree call-middleware]} call-path args queries env]
   (letfn [(runner [{:keys [method handler request pathset]} {:keys [env]}]
             (case method
               :get ((:get handler) pathset env)
@@ -506,7 +514,7 @@
                       results)))]
     (execute route-tree
              (init-context :call [call-path] env)
-             runner)))
+             (cond-> runner call-middleware call-middleware))))
 
 (defn call
   ([router path args queries]
@@ -530,8 +538,14 @@
 (defrecord Router [route-tree])
 
 (defn router
-  [routes]
-  (Router. (route-tree routes)))
+  ([routes]
+   (Router. (route-tree routes)))
+  ([routes {:keys [get set call]}]
+   (let [config (cond-> {:route-tree (route-tree routes)}
+                        get (assoc :get-middleware get)
+                        set (assoc :set-middleware set)
+                        call (assoc :call-middleware call))]
+     (map->Router config))))
 
 (defrecord RouterDatasource
   [router env]

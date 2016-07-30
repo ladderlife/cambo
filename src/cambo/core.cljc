@@ -1,5 +1,5 @@
 (ns cambo.core
-  (:refer-clojure :exclude [get set atom ref keys range ->Atom Atom ->Ref Ref ->Range Range]))
+  (:refer-clojure :exclude [get set atom ref keys range ->Atom Atom ->Ref Ref ->Range Range empty?]))
 
 ;;; DATASOURCE
 
@@ -22,6 +22,11 @@
 
 (defn atom? [x]
   (instance? Atom x))
+
+(defn empty? [x]
+  (or (nil? x)
+      (and (atom? x)
+           (not (contains? x :value)))))
 
 (defrecord Ref [path])
 
@@ -65,6 +70,7 @@
   (or (string? x)
       (keyword? x)
       (integer? x)
+      (symbol? x)
       (uuid? x)))
 
 (defrecord Range [start end])
@@ -232,12 +238,49 @@
               [(path-value path pathmap)]))]
     (path-values [] pathmap)))
 
+(defn join?
+  [x]
+  (and (map? x)
+       (= 1 (count x))
+       (vector? (second (first x)))))
+
+(defn query?
+  [x]
+  (vector? x))
+
+(defn prepend-query [[k & path] query]
+  (cond
+    (seq path) [{k (prepend-query path query)}]
+    (seq query) [{k query}]
+    :else [k]))
+
 ;; TODO: this has proved useful -- make it robust!
 (defn pull [query]
-  (let [leafs (into [] (remove map? query))
-        paths (for [join (filter map? query)
-                    :let [[key query] (first join)]
-                    paths (pull query)]
-                (into [key] paths))]
-    (cond-> (into [] paths)
-            (seq leafs) (conj [leafs]))))
+  (letfn [(create-range [min max]
+            (cond
+              ;; TODO: replace with a range/max when we got that
+              (and (nil? min) (nil? max)) (range 0 100)
+              (and (nil? max)) (range 0 min)
+              :else (range min max)))
+          (expand-ranges [key]
+            (cond
+              (list? key)
+              (let [[name key min max] key]
+                (assert (= name 'range))
+                {key [(create-range min max)]})
+
+              (and (map? key)
+                   (list? (ffirst key)))
+              (let [[[name key min max] query] (first key)]
+                (assert (= name 'range))
+                {key [{(create-range min max) query}]})
+
+              :else key))]
+    (let [query (map expand-ranges query)
+          leafs (into [] (remove map? query))
+          paths (for [join (filter map? query)
+                      :let [[key query] (first join)]
+                      paths (pull query)]
+                  (into [key] paths))]
+      (cond-> (into [] paths)
+              (seq leafs) (conj [leafs])))))

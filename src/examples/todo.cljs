@@ -135,7 +135,8 @@
       _ (comp/expand (get-fragment Field :question))]
   (cb))
 
-(def model (model/model {:datasource (http-datasource "http://localhost:4000/cambo")}))
+(def model (model/model {:datasource (http-datasource "http://localhost:4000/cambo"
+                                                      {"X-CSRF-TOKEN" "abc123"})}))
 
 (js/ReactDOM.render
   (comp/renderer {:queries {:user [:current-user]}

@@ -54,15 +54,25 @@
     (fn []
       (unsubscribe model id))))
 
+(defn set-cache*
+  [{:keys [cache] :as m} pathmaps]
+  (profile "cambo.model#set-cache*"
+           (swap! cache (fn [cache]
+                          (let [{:keys [graph]} (profile "cambo.model#set-cache*::set" (graph/set cache pathmaps))]
+                            graph)))
+           (publish m)
+           nil))
+
 (defn set-cache
   [{:keys [cache] :as m} pathmaps]
-  #?(:cljs (let [ps (atom nil)
-                 c (swap! cache (fn [cache]
-                                  (let [{:keys [graph paths]} (graph/set cache pathmaps)]
-                                    (reset! ps paths)
-                                    graph)))]
-             (publish m)
-             (:graph (graph/get c @ps {:normalize false})))
+  #?(:cljs (profile "cambo.model#set-cache"
+                    (let [ps (atom nil)
+                          c (swap! cache (fn [cache]
+                                           (let [{:keys [graph paths]} (profile "cambo.model#set-cache::set" (graph/set cache pathmaps))]
+                                             (reset! ps paths)
+                                             graph)))]
+                      (publish m)
+                      (:graph (profile "cambo.model#set-cache::get" (graph/get c @ps {:normalize false})))))
      :clj (with-local-vars [ps nil]
             (let [c (swap! cache (fn [cache]
                                    (let [{:keys [graph paths]} (graph/set cache pathmaps)]
@@ -111,14 +121,14 @@
   (let [{:keys [graph missing]} (profile "cambo.model#prime::get" (graph/get @cache pathsets (get-options m)))]
     (if (seq missing)
       (core/get datasource missing (fn [{:keys [graph]}]
-                                     (profile "cambo.model#prime::set" (set-cache m [graph]))
+                                     (profile "cambo.model#prime::set" (set-cache* m [graph]))
                                      (cb true)))
       (cb {:ready true}))))
 
 (defn force
-  [{:keys [cache datasource] :as m} pathsets cb]
+  [{:keys [datasource] :as m} pathsets cb]
   (core/get datasource pathsets (fn [{:keys [graph]}]
-                                  (profile "cambo.model#force::set" (set-cache m [graph]))
+                                  (profile "cambo.model#force::set" (set-cache* m [graph]))
                                   (cb true))))
 
 ;; TODO: rest of falcor model interface as necessary
