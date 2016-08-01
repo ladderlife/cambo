@@ -6,15 +6,30 @@
 
 (def *profile* (atom {}))
 
-(defn ^:export report-profiling
+(defn ^:export reset-profiling
   []
-  (doseq [[name durations] @*profile*
-          :let [max (apply max durations)
-                min (apply min durations)
-                sum (reduce + durations)
-                count (count durations)
-                avg (/ sum count)]]
-    (println name "avg" avg "max" max "min" min "count" count)))
+  (reset! *profile* {}))
+
+(defn ^:export report-profiling
+  ([]
+   (doseq [[name entries] @*profile*
+           :let [durations (map second entries)
+                 max (apply max durations)
+                 min (apply min durations)
+                 sum (reduce + durations)
+                 count (count durations)
+                 avg (/ sum count)]]
+     (println name "avg" avg "max" max "min" min "count" count)))
+  ([name]
+    (let [entries (get @*profile* name)
+          entries (sort-by second entries)]
+      (doseq [[args duration] entries]
+        (println "args" args "duration" duration))))
+  ([name count]
+   (let [entries (get @*profile* name)
+         entries (take count (sort-by second entries))]
+     (doseq [[args duration] entries]
+       (println "args" args "duration" duration)))))
 
 (def props-key "cambo$props")
 
@@ -342,7 +357,7 @@
                Object
 
                (run-variables [this partial-vars cb force?]
-                 (profile "cambo.container#run-varibles"
+                 (profile "cambo.container#run-variables" fragments
                           (let [{:keys [route model]} (context this)
                                 {:keys [variables]} (state this)
                                 variables (get (.-pending this) :variables variables)
@@ -351,14 +366,14 @@
                                 pointers (create-fragment-pointers fragments (props this) next-variables)
                                 pathsets (into [] (mapcat :pathsets (vals pointers)))
                                 on-readystate (fn [ready]
-                                                (profile "cambo.container#run-variables::on-readystate"
+                                                (profile "cambo.container#run-variables::on-readystate" fragments
                                                          (when ready
                                                            (set! (.-pending this) nil)
                                                            (set! (.-fragment-pointers this) pointers)
                                                            (.update-subscription this (context this))
                                                            (when (.-mounted this)
                                                              (set-state this (fn [{:keys [cambo/variables]}]
-                                                                               (profile "cambo.container#run-variables::set-state"
+                                                                               (profile "cambo.container#run-variables::set-state" fragments
                                                                                         {:query-data (.get-query-data this (props this) (context this))
                                                                                          :variables variables
                                                                                          :cambo/variables (assoc variables :variables next-variables)}))))))
@@ -370,7 +385,7 @@
                             (set! (.-pending this) {:variables variables}))))
 
                (initialize [this {:keys [cambo/variables]} props {:keys [route] :as context} vars]
-                 (profile "cambo.container#initialize"
+                 (profile "cambo.container#initialize" fragments
                           (let [next-vars (prepare-variables vars route)]
                             (.update-fragment-pointers this props next-vars)
                             (.update-subscription this context)
@@ -379,11 +394,11 @@
                              :cambo/variables (assoc variables :variables next-vars)})))
 
                (update-fragment-pointers [this props vars]
-                 (profile "cambo.container#update-fragment-pointers"
+                 (profile "cambo.container#update-fragment-pointers" fragments
                           (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars))))
 
                (update-subscription [this {:keys [model]}]
-                 (profile "cambo.container#update-subscription"
+                 (profile "cambo.container#update-subscription" fragments
                           (let [pointers (.-fragment-pointers this)
                                 pathsets (into [] (mapcat :pathsets (vals pointers)))
                                 subscription (if-let [subscription (.-subscription this)]
@@ -393,7 +408,7 @@
                             (set! (.-subscription this) subscription))))
 
                (get-query-data [this props {:keys [model]}]
-                 (profile "cambo.container#get-query-data"
+                 (profile "cambo.container#get-query-data" fragments
                           (let [pointers (.-fragment-pointers this)
                                 pathsets (mapcat :pathsets (vals pointers))
                                 graph (-> model model/with-path-info (model/get-cache pathsets))
@@ -424,7 +439,7 @@
                    (dispose sub)))
 
                (shouldComponentUpdate [this next-props next-state next-context]
-                 (profile "cambo.container#shouldComponentUpdate"
+                 (profile "cambo.container#shouldComponentUpdate" fragments
                           (if (not= (.-children next-props)
                                     (.. this -props -children))
                             false
@@ -494,7 +509,8 @@
            (specify! (.-prototype Renderer)
              Object
              (run-queries [this {:keys [container model queries force]}]
-               (let [pathsets (query-pathsets queries container)
+               (let [pathsets (profile "cambo.renderer#query-pathsets" queries
+                                       (query-pathsets queries container))
                      on-readystate (fn [readystate]
                                      (if (.-mounted this)
                                        (set-state this {:readystate readystate})

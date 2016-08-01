@@ -14,3 +14,4 @@ cambo.iml
 /out
 /resources/public/cljs
 figwheel_server.log
+/src/examples/queries.cljc

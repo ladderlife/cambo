@@ -1,5 +1,5 @@
 (ns cambo.core-test
-  (:refer-clojure :exclude [get set atom ref keys range empty?])
+  (:refer-clojure :exclude [get set atom ref keys range])
   (:require [cambo.core :refer :all]
             [clojure.test :refer :all]))
 

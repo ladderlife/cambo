@@ -8,77 +8,79 @@
                         :path-info false
                         :boxed false}))
   ([graph pathsets {:keys [normalize boxed path-info]}]
-   (letfn [(get-pathset [node path opt result [ks & pathset]]
+   (letfn [(get-pathset [node path opt result [ks & pathset :as ps]]
              ;; TODO: can simplify -- have tests / look at pull
-             (reduce (fn [result k]
-                       (if (and (branch? node)
-                                (not (contains? node k)))
-                         (update result :missing conj (into (conj opt k) pathset))
-                         (let [node (clojure.core/get node k)
-                               path (conj path k)
-                               opt (conj opt k)
-                               result (if (and path-info
-                                               (branch? node))
-                                        (assoc-in result
-                                                  (into [:graph] (conj path :cambo/path))
-                                                  opt)
-                                        result)]
-                           (if (seq pathset)
-                             (cond
-                               (ref? node)
-                               (let [result (if normalize
-                                              (assoc-in result (into [:graph] opt) node)
-                                              result)
-                                     opt (:path node)
-                                     result (if path-info
-                                              (assoc-in result
-                                                        (into [:graph] (conj path :cambo/path))
-                                                        opt)
-                                              result)
-                                     node (get-in graph opt)]
-                                 (get-pathset node path opt result pathset))
+             (if-not (branch? node)
+               (update result :missing conj (into opt ps))
+               (reduce (fn [result k]
+                         (if (and (branch? node)
+                                  (not (contains? node k)))
+                           (update result :missing conj (into (conj opt k) pathset))
+                           (let [node (clojure.core/get node k)
+                                 path (conj path k)
+                                 opt (conj opt k)
+                                 result (if (and path-info
+                                                 (branch? node))
+                                          (assoc-in result
+                                                    (into [:graph] (conj path :cambo/path))
+                                                    opt)
+                                          result)]
+                             (if (seq pathset)
+                               (cond
+                                 (ref? node)
+                                 (let [result (if normalize
+                                                (assoc-in result (into [:graph] opt) node)
+                                                result)
+                                       opt (:path node)
+                                       result (if path-info
+                                                (assoc-in result
+                                                          (into [:graph] (conj path :cambo/path))
+                                                          opt)
+                                                result)
+                                       node (get-in graph opt)]
+                                   (get-pathset node path opt result pathset))
 
-                               (branch? node)
-                               (get-pathset node path opt result pathset)
+                                 (branch? node)
+                                 (get-pathset node path opt result pathset)
 
-                               (nil? node)
-                               (assoc-in result (into [:graph] (if normalize opt path))
-                                         (if boxed
-                                           (atom node)
-                                           node))
+                                 (nil? node)
+                                 (assoc-in result (into [:graph] (if normalize opt path))
+                                           (if boxed
+                                             (atom node)
+                                             node))
 
-                               (core/empty? node)
-                               result
+                                 (core/non-value? node)
+                                 result
 
-                               (atom? node)
-                               (assoc-in result (into [:graph] (if normalize opt path))
-                                         (if boxed
-                                           node
-                                           (:value node)))
+                                 (atom? node)
+                                 (assoc-in result (into [:graph] (if normalize opt path))
+                                           (if boxed
+                                             node
+                                             (:value node)))
 
-                               :else
-                               (assoc-in result (into [:graph] (if normalize opt path))
-                                         (if boxed
-                                           (atom node)
-                                           node)))
-                             (cond
-                               (branch? node) result
-                               (atom? node) (assoc-in result (into [:graph] (if normalize opt path))
-                                                      (if boxed
-                                                        node
-                                                        (:value node)))
-                               (ref? node) (if path-info
-                                             (let [opt (:path node)]
-                                               (assoc-in result
-                                                         (into [:graph] (conj path :cambo/path))
-                                                         opt))
-                                             result)
-                               :else (assoc-in result (into [:graph] (if normalize opt path))
-                                               (if boxed
-                                                 (atom node)
-                                                 node)))))))
-                     result
-                     (keys ks)))]
+                                 :else
+                                 (assoc-in result (into [:graph] (if normalize opt path))
+                                           (if boxed
+                                             (atom node)
+                                             node)))
+                               (cond
+                                 (branch? node) result
+                                 (atom? node) (assoc-in result (into [:graph] (if normalize opt path))
+                                                        (if boxed
+                                                          node
+                                                          (:value node)))
+                                 (ref? node) (if path-info
+                                               (let [opt (:path node)]
+                                                 (assoc-in result
+                                                           (into [:graph] (conj path :cambo/path))
+                                                           opt))
+                                               result)
+                                 :else (assoc-in result (into [:graph] (if normalize opt path))
+                                                 (if boxed
+                                                   (atom node)
+                                                   node)))))))
+                       result
+                       (keys ks))))]
      (reduce (partial get-pathset graph [] [])
              {:graph {}
               :missing []}
@@ -86,81 +88,82 @@
 
 (defn pull
   ([cache query]
-    (pull cache query {:normalize false
-                       :path-info false
-                       :boxed false}))
+   (pull cache query {:normalize false
+                      :path-info false
+                      :boxed false}))
   ([cache query {:keys [normalize boxed path-info]}]
     ;; overhead of atoms?
-    (let [refs (clojure.core/atom [])
-          missing (clojure.core/atom [])]
-      (letfn [(add-ref! [path query]
-                (swap! refs conj (core/prepend-query path query)))
-              (add-missing! [path query]
-                (swap! missing into (core/prepend-query path query)))
-              (set-value [result k node query]
-                (cond
-                  (branch? node) result
-                  (and (atom? node)
-                       (core/empty? node)) result
-                  (ref? node) (do
-                                (add-ref! (:path node) query)
-                                (assoc result k node))
-                  :else (assoc result k (cond
-                                          (atom? node) (if boxed node (:value node))
-                                          :else (if boxed (atom node) node)))))
-              (set-path [result k path]
-                (if path-info
-                  (assoc-in result [k :cambo/path] path)
-                  result))
-              (inner-query [node result path query]
-                (if-not (branch? node)
-                  (do (add-missing! path query)
-                      result)
-                  (reduce (fn [result k]
-                            (let [[k query] (if (core/join? k)
-                                              (first k)
-                                              [k []])]
-                              (reduce (fn [result k]
-                                        (if-not (contains? node k)
-                                          (do (add-missing! (conj path k) query)
-                                              result)
-                                          (let [node (clojure.core/get node k)
-                                                path (conj path k)
-                                                result (if (branch? node)
-                                                         (set-path result k path)
-                                                         result)]
-                                            (cond
-                                              (and (branch? node)
-                                                   (seq query))
-                                              (let [inner-result (inner-query node (clojure.core/get result k) path query)]
-                                                (if (or (seq inner-result)
-                                                        (contains? result k))
-                                                  (assoc result k inner-result)
-                                                  result))
+   (let [refs (clojure.core/atom [])
+         missing (clojure.core/atom [])]
+     (letfn [(add-ref! [path query]
+               (swap! refs conj (core/prepend-query path query)))
+             (add-missing! [path query]
+               (swap! missing into (core/prepend-query path query)))
+             (set-value [result k node query]
+               (cond
+                 (branch? node) result
+                 (core/non-value? node) result
+                 (ref? node) (do
+                               (add-ref! (:path node) query)
+                               (assoc result k node))
+                 :else (assoc result k (cond
+                                         (atom? node) (if boxed node (:value node))
+                                         :else (if boxed (atom node) node)))))
+             (set-path [result k path]
+               (if path-info
+                 (assoc-in result [k :cambo/path] path)
+                 result))
+             (inner-query [node result path query]
+               (if-not (branch? node)
+                 (do (add-missing! path query)
+                     result)
+                 (reduce (fn [result k]
+                           (let [[k query] (if (core/join? k)
+                                             (first k)
+                                             [k []])]
+                             (reduce (fn [result k]
+                                       (if-not (contains? node k)
+                                         (do (add-missing! (conj path k) query)
+                                             result)
+                                         (let [node (clojure.core/get node k)
+                                               path (conj path k)
+                                               result (if (branch? node)
+                                                        (set-path result k path)
+                                                        result)]
+                                           (cond
+                                             (and (branch? node)
+                                                  (seq query))
+                                             (let [inner-result (inner-query node (clojure.core/get result k) path query)]
+                                               (if (or (seq inner-result)
+                                                       (contains? result k))
+                                                 (assoc result k inner-result)
+                                                 result))
 
-                                              (and (ref? node)
-                                                   (seq query)
-                                                   (not normalize))
-                                              (let [ref-query (core/prepend-query (:path node) query)
-                                                    ref-result (inner-query cache {} [] ref-query)
-                                                    ref-result (get-in ref-result (:path node))]
-                                                (assoc result k ref-result))
+                                             ;; TODO: revisit refs ;p
+                                             (and (ref? node)
+                                                  (seq query)
+                                                  (not normalize))
+                                             (let [ref-path (:path node)
+                                                   ;; TODO: we need to assert this ref path too
+                                                   ref-result (inner-query (get-in cache ref-path) (clojure.core/get result k) ref-path query)]
+                                               (-> result
+                                                   (assoc k ref-result)
+                                                   (set-path k ref-path)))
 
-                                              :else (set-value result k node query)
-                                              ))))
-                                      result
-                                      (keys k))))
-                          result
-                          query)))]
-        (loop [result (inner-query cache {} [] query)]
-          (let [refs' @refs]
-            (reset! refs [])
-            (if (seq refs')
-              (recur (reduce #(inner-query cache %1 [] %2)
-                             result
-                             refs'))
-              {:graph result
-               :missing @missing})))))))
+                                             :else (set-value result k node query)))))
+                                     result
+                                     (keys k))))
+                         result
+                         query)))]
+       (loop [result (inner-query cache {} [] query)]
+         (let [refs' @refs]
+           (reset! refs [])
+           (if (seq refs')
+             (recur (reduce #(inner-query cache %1 [] %2)
+                            result
+                            refs'))
+             {:graph result
+              :missing @missing})))))))
 
 (defn missing-transient
   [graph pathsets]
@@ -168,25 +171,26 @@
             (if (or (nil? node)
                     (empty? node))
               (conj! missing ps)
-              (reduce (fn [missing k]
-                        (if (and (branch? node)
-                                 (not (contains? node k)))
-                          (conj! missing (into (conj path k) pathset))
-                          (let [node (clojure.core/get node k)
-                                path (conj path k)]
-                            (cond
-                              (ref? node)
-                              (let [path (:path node)
-                                    node (get-in graph path)]
-                                (missing-pathset node path missing pathset))
+              (let []
+                (reduce (fn [missing k]
+                          (if (and (branch? node)
+                                   (not (contains? node k)))
+                            (conj! missing (into (conj path k) pathset))
+                            (let [node (clojure.core/get node k)
+                                  path (conj path k)]
+                              (cond
+                                (ref? node)
+                                (let [path (:path node)
+                                      node (get-in graph path)]
+                                  (missing-pathset node path missing pathset))
 
-                              (and (branch? node)
-                                   (seq pathsets))
-                              (missing-pathset node path missing pathset)
+                                (and (branch? node)
+                                     (seq pathsets))
+                                (missing-pathset node path missing pathset)
 
-                              :else missing))))
-                      missing
-                      (keys ks))))]
+                                :else missing))))
+                        missing
+                        (keys ks)))))]
     (persistent! (reduce (partial missing-pathset graph [])
                          (transient [])
                          pathsets))))
@@ -216,8 +220,8 @@
                               :else []))))
                       ;; TODO: potential area of optimization around ranges (diff'ing pre-expansion)
                       (keys ks))))]
-    (mapcat (partial missing-pathset graph [])
-            pathsets)))
+    (vec (mapcat (partial missing-pathset graph [])
+            pathsets))))
 
 (defn get-value
   [graph path]

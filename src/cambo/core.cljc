@@ -1,5 +1,5 @@
 (ns cambo.core
-  (:refer-clojure :exclude [get set atom ref keys range ->Atom Atom ->Ref Ref ->Range Range empty?]))
+  (:refer-clojure :exclude [get set atom ref keys range ->Atom Atom ->Ref Ref ->Range Range]))
 
 ;;; DATASOURCE
 
@@ -23,10 +23,9 @@
 (defn atom? [x]
   (instance? Atom x))
 
-(defn empty? [x]
-  (or (nil? x)
-      (and (atom? x)
-           (not (contains? x :value)))))
+(defn non-value? [x]
+  (and (atom? x)
+       (not (contains? x :value))))
 
 (defrecord Ref [path])
 

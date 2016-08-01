@@ -569,8 +569,22 @@
            :path-info false
            :boxed false}))
 
+  ;; 16us w/ no range check
+  ;; 27us w/ cond range check
+  ;; 32us w/ true range check
+  ;; 16us w/ false range check
   (bench/quick-bench
     (get cache [[:users (range 0 5) [:user/name :user/age]]]
+         {:normalize true
+          :path-info false
+          :boxed false}))
+
+  ;; 98us w/ no range check
+  ;; 25us w/ cond range check
+  ;; 32us w/ true range check
+  ;; 90us w/ false range check
+  (bench/quick-bench
+    (get cache [[:users (range 0 100) [:user/name :user/age]]]
          {:normalize true
           :path-info false
           :boxed false}))

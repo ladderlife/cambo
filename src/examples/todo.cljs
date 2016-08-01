@@ -5,7 +5,8 @@
             [cambo.http :refer [http-datasource]]
             [cambo.model :as model]
             [cljsjs.react]
-            [cljsjs.react.dom]))
+            [cljsjs.react.dom]
+            [cljs.pprint :refer [pprint]]))
 
 
 (enable-console-print!)
@@ -127,13 +128,6 @@
                                        {:question/answer [(get-fragment Answer :answer)]}
                                        {:question/questions [{(core/range 0 10) [(get-fragment Field :question 4)]}]}])}
               (render [this] nil))
-
-(profile "cambo/expand"
-         (comp/expand (get-fragment Field :question)))
-
-(let [cb (profile "cambo/expand")
-      _ (comp/expand (get-fragment Field :question))]
-  (cb))
 
 (def model (model/model {:datasource (http-datasource "http://localhost:4000/cambo"
                                                       {"X-CSRF-TOKEN" "abc123"})}))

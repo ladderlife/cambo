@@ -116,17 +116,16 @@
                     container#)))))
 
 (defmacro profile
-  ([name]
+  ([name args]
    `(let [start# (js/window.performance.now)]
       (fn []
         (let [duration# (- (js/window.performance.now) start#)]
-          (js/window.requestAnimationFrame (fn []
-                                             (swap! cambo.component/*profile* update ~name (fnil conj []) duration#)))))))
-  ([name & body]
+          (when cambo.component/*profile*
+            (swap! cambo.component/*profile* update ~name (fnil conj []) [~args duration#]))))))
+  ([name args & body]
    `(let [start# (js/window.performance.now)
           result# (do ~@body)
           duration# (- (js/window.performance.now) start#)]
-      (js/window.requestAnimationFrame (fn []
-                                         (when cambo.component/*profile*
-                                           (swap! cambo.component/*profile* update ~name (fnil conj []) duration#))))
+      (when cambo.component/*profile*
+        (swap! cambo.component/*profile* update ~name (fnil conj []) [~args duration#]))
       result#)))

@@ -22,7 +22,8 @@
                          [cheshire "5.6.2"]
                          [environ "1.0.3"]
                          [ring "1.5.0"]
-                         [criterium "0.4.4"]]}}
+                         [criterium "0.4.4"]
+                         [cljsjs/benchmark "2.1.0-1"]]}}
   :cljsbuild {:builds [{:id "dev"
                         :source-paths ["src"]
                         :figwheel true
@@ -30,6 +31,13 @@
                                    :asset-path "cljs/main-out"
                                    :output-to  "resources/public/cljs/main.js"
                                    :output-dir "resources/public/cljs/main-out"}}
+                       {:id "bench"
+                        :source-paths ["src"]
+                        :figwheel true
+                        :compiler {:main "examples.benchmarks"
+                                   :asset-path "cljs/bench-out"
+                                   :output-to  "resources/public/cljs/bench.js"
+                                   :output-dir "resources/public/cljs/bench-out"}}
                        {:id "prod"
                         :source-paths ["src"]
                         :figwheel true

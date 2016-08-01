@@ -200,16 +200,20 @@
     :else [[] [keyset]]))
 
 (extend-protocol IRouteKey
-  clojure.lang.Keyword
+  #?(:clj clojure.lang.Keyword
+     :cljs cljs.core.Keyword)
   (strip [this keyset]
     (strip-primitive this keyset))
-  java.lang.String
+  #?(:clj String
+     :cljs string)
   (strip [this keyset]
     (strip-primitive this keyset))
-  clojure.lang.Symbol
+  #?(:clj clojure.lang.Symbol
+     :cljs cljs.core.Symbol)
   (strip [this keyset]
     (strip-primitive this keyset))
-  java.lang.Long
+  #?(:clj Number
+     :cljs number)
   (strip [this keyset]
     (cond
       (= this keyset) [[keyset] []]
@@ -222,7 +226,8 @@
                                :else [[] [keyset]]))
       (vector? keyset) (strip-collect this keyset)
       :else [[] [keyset]]))
-  clojure.lang.PersistentVector
+  #?(:clj clojure.lang.APersistentVector
+     :cljs cljs.core.PersistentVector)
   (strip [this keyset]
     (reduce (fn [[int diff] route-key]
               (let [[int' diff'] (strip route-key diff)]
@@ -352,20 +357,20 @@
               (and (core/ref? value) (seq suffix))
               (update :pathsets conj (into (:path value) suffix)))))
 
-  ;; pathmaps -- add types as necessary
-  clojure.lang.PersistentArrayMap
+  #?(:clj clojure.lang.APersistentMap
+     :cljs cljs.core.PersistentArrayMap)
   (update-context [pathmap context match]
     (reduce (fn [context pv]
               (update-context pv context match))
             context
             (core/pathmap-values pathmap)))
 
-  clojure.lang.PersistentHashMap
-  (update-context [pathmap context match]
-    (reduce (fn [context pv]
-              (update-context pv context match))
-            context
-            (core/pathmap-values pathmap))))
+  #?(:cljs cljs.core.PersistentHashMap)
+  #?(:cljs (update-context [pathmap context match]
+                           (reduce (fn [context pv]
+                                     (update-context pv context match))
+                                   context
+                                   (core/pathmap-values pathmap)))))
 
 (deftype Invalidate [path]
   IRouteResult
