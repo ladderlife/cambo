@@ -1,35 +1,9 @@
 (ns cambo.component
-  #?(:cljs (:require-macros [cambo.component.macros :refer [profile]]))
+  #?(:cljs (:require-macros [cambo.component.macros]))
   (:require [cambo.core :as core :refer [pull]]
             [cambo.model :as model]
+            #?(:clj [cambo.component.macros])
             #?(:cljs [cljsjs.react])))
-
-(def *profile* (atom {}))
-
-(defn ^:export reset-profiling
-  []
-  (reset! *profile* {}))
-
-(defn ^:export report-profiling
-  ([]
-   (doseq [[name entries] @*profile*
-           :let [durations (map second entries)
-                 max (apply max durations)
-                 min (apply min durations)
-                 sum (reduce + durations)
-                 count (count durations)
-                 avg (/ sum count)]]
-     (println name "avg" avg "max" max "min" min "count" count)))
-  ([name]
-    (let [entries (get @*profile* name)
-          entries (sort-by second entries)]
-      (doseq [[args duration] entries]
-        (println "args" args "duration" duration))))
-  ([name count]
-   (let [entries (get @*profile* name)
-         entries (take count (sort-by second entries))]
-     (doseq [[args duration] entries]
-       (println "args" args "duration" duration)))))
 
 (def props-key "cambo$props")
 
@@ -53,6 +27,14 @@
              ;; if we ever need the container itself, can revisit this
              (when ref (aset js-props "ref" #(ref (some-> % .-component))))
              js-props)))
+
+(defn get-children
+  [props]
+  (.-children props))
+
+(defn children
+  [comp]
+  (get-children (.-props comp)))
 
 (def state-key "cambo$state")
 
@@ -96,9 +78,18 @@
   [comp]
   (get-context (.-context comp)))
 
+(defn range-seq
+  [elements]
+  (->> elements
+       (filter (comp integer? first))
+       (sort-by first)))
+
 (defprotocol IFragments
   (fragment-names [this])
   (fragment [this name]))
+
+(defn fragments? [x]
+  (satisfies? IFragments x))
 
 ;; TODO: this caching logic is ugly / spread around / duplicated / etc ... works (I think) but hammock it a bit!
 (defprotocol IFragment
@@ -138,54 +129,85 @@
         (set! (.-cached-expand this) expanded-pathsets)
         expanded-pathsets))))
 
-(deftype RecursiveContainerFragment [comp name count]
-  IFragment
-  (pathsets [this]
-    (if-let [cached-pathsets (.-cached-pathsets this)]
-      cached-pathsets
-      (let [fragment (fragment comp name)
-            pathsets (update-fragments (fn [fragment]
-                                         (if (instance? RecursiveContainerFragment fragment)
-                                           (if (> count 0)
-                                             (do
-                                               (assert (and (= comp (.-comp fragment))
-                                                            (= name (.-name fragment)))
-                                                       "recursive fragment can't contain other recursive fragments")
-                                               [[[(RecursiveContainerFragment. (.-comp fragment)
-                                                                               (.-name fragment)
-                                                                               (dec count))]]])
-                                             [])
-                                           [[[fragment]]]))
-                                       (pathsets fragment))]
-        (set! (.-cached-pathsets this) pathsets)
-        pathsets)))
-  (expand [this]
-    (if-let [cached-expand (.-cached-expand this)]
-      cached-expand
-      (let [expanded-pathsets (update-fragments expand (pathsets this))]
-        (set! (.-cached-expand this) expanded-pathsets)
-        expanded-pathsets))))
+#?(:clj (deftype RecursiveContainerFragment [comp name count]
+          IFragment
+          (pathsets [this]
+            (let [fragment (fragment comp name)
+                  pathsets (update-fragments (fn [fragment]
+                                               (if (instance? RecursiveContainerFragment fragment)
+                                                 (if (> count 0)
+                                                   (do
+                                                     (assert (and (= comp (.-comp fragment))
+                                                                  (= name (.-name fragment)))
+                                                             "recursive fragment can't contain other recursive fragments")
+                                                     [[[(RecursiveContainerFragment. (.-comp fragment)
+                                                                                     (.-name fragment)
+                                                                                     (dec count))]]])
+                                                   [])
+                                                 [[[fragment]]]))
+                                             (pathsets fragment))]
+              pathsets))
+          (expand [this]
+            (let [expanded-pathsets (update-fragments expand (pathsets this))]
+              expanded-pathsets))))
 
-(deftype ContainerFragment [comp name]
-  IFragment
-  (pathsets [this]
-    (if-let [cached-pathsets (.-cached-pathsets this)]
-      cached-pathsets
-      (let [pathsets (pathsets (fragment comp name))]
-        (set! (.-cached-pathsets this) pathsets)
-        pathsets)))
-  (expand [this]
-    (if-let [cached-expand (.-cached-expand this)]
-      cached-expand
-      (let [expanded-pathsets (update-fragments expand (pathsets this))]
-        (set! (.-cached-expand this) expanded-pathsets)
-        expanded-pathsets))))
+#?(:cljs (deftype RecursiveContainerFragment [comp name count]
+           IFragment
+           (pathsets [this]
+             (if-let [cached-pathsets (.-cached-pathsets this)]
+               cached-pathsets
+               (let [fragment (fragment comp name)
+                     pathsets (update-fragments (fn [fragment]
+                                                  (if (instance? RecursiveContainerFragment fragment)
+                                                    (if (> count 0)
+                                                      (do
+                                                        (assert (and (= comp (.-comp fragment))
+                                                                     (= name (.-name fragment)))
+                                                                "recursive fragment can't contain other recursive fragments")
+                                                        [[[(RecursiveContainerFragment. (.-comp fragment)
+                                                                                        (.-name fragment)
+                                                                                        (dec count))]]])
+                                                      [])
+                                                    [[[fragment]]]))
+                                                (pathsets fragment))]
+                 (set! (.-cached-pathsets this) pathsets)
+                 pathsets)))
+           (expand [this]
+             (if-let [cached-expand (.-cached-expand this)]
+               cached-expand
+               (let [expanded-pathsets (update-fragments expand (pathsets this))]
+                 (set! (.-cached-expand this) expanded-pathsets)
+                 expanded-pathsets)))))
 
-(def *fragment-cache* (atom {}))
+#?(:clj (deftype ContainerFragment [comp name]
+          IFragment
+          (pathsets [this]
+            (pathsets (fragment comp name)))
+          (expand [this]
+            (update-fragments expand (pathsets this)))))
 
+#?(:cljs (deftype ContainerFragment [comp name]
+           IFragment
+           (pathsets [this]
+             (if-let [cached-pathsets (.-cached-pathsets this)]
+               cached-pathsets
+               (let [pathsets (pathsets (fragment comp name))]
+                 (set! (.-cached-pathsets this) pathsets)
+                 pathsets)))
+           (expand [this]
+             (if-let [cached-expand (.-cached-expand this)]
+               cached-expand
+               (let [expanded-pathsets (update-fragments expand (pathsets this))]
+                 (set! (.-cached-expand this) expanded-pathsets)
+                 expanded-pathsets)))))
+
+(def ^:dynamic *fragment-cache* (atom {}))
+
+;; TODO: rework this lol
 (defn get-fragment
   ;; curiosity: overhead of always `swap!` vs deref & check and only `swap!` if not there
   ([comp name]
+   (assert (fragments? comp))
    (let [cache (swap! *fragment-cache*
                       (fn [cache]
                         (if (contains? cache [comp name])
@@ -193,6 +215,7 @@
                           (assoc cache [comp name] (ContainerFragment. comp name)))))]
      (get cache [comp name])))
   ([comp name count]
+   (assert (fragments? comp))
    (let [cache (swap! *fragment-cache*
                       (fn [cache]
                         (if (contains? cache [comp name count])
@@ -292,33 +315,33 @@
 
 (def variables-key "cambo$variables")
 
-(defn get-variables
-  [props]
-  (aget props variables-key))
+#?(:cljs (defn get-variables
+           [props]
+           (aget props variables-key)))
 
-(defn variables*
-  [this]
-  (get-variables (.-props this)))
+#?(:cljs (defn variables*
+           [this]
+           (get-variables (.-props this))))
 
-(defn variables
-  [this]
-  (get (variables* this) :variables))
+#?(:cljs (defn variables
+           [this]
+           (get (variables* this) :variables)))
 
-(defn set-variables
-  ([this variables]
-   (set-variables this variables nil))
-  ([this variables cb]
-   (let [{:keys [run]} (variables* this)]
-     (run variables cb false))))
+#?(:cljs (defn set-variables
+           ([this variables]
+            (set-variables this variables nil))
+           ([this variables cb]
+            (let [{:keys [run]} (variables* this)]
+              (run variables cb false)))))
 
-(defn force-fetch
-  ([this]
-   (force-fetch this nil nil))
-  ([this variables]
-   (force-fetch this variables nil))
-  ([this variables cb]
-   (let [{:keys [run]} (variables* this)]
-     (run variables cb true))))
+#?(:cljs (defn force-fetch
+           ([this]
+            (force-fetch this nil nil))
+           ([this variables]
+            (force-fetch this variables nil))
+           ([this variables cb]
+            (let [{:keys [run]} (variables* this)]
+              (run variables cb true)))))
 
 #?(:cljs (defn create-container
            [component {:keys [initial-variables prepare-variables fragments]
@@ -357,67 +380,60 @@
                Object
 
                (run-variables [this partial-vars cb force?]
-                 (profile "cambo.container#run-variables" fragments
-                          (let [{:keys [route model]} (context this)
-                                {:keys [variables]} (state this)
-                                variables (get (.-pending this) :variables variables)
-                                variables (merge variables partial-vars)
-                                next-variables (prepare-variables variables route)
-                                pointers (create-fragment-pointers fragments (props this) next-variables)
-                                pathsets (into [] (mapcat :pathsets (vals pointers)))
-                                on-readystate (fn [ready]
-                                                (profile "cambo.container#run-variables::on-readystate" fragments
-                                                         (when ready
-                                                           (set! (.-pending this) nil)
-                                                           (set! (.-fragment-pointers this) pointers)
-                                                           (.update-subscription this (context this))
-                                                           (when (.-mounted this)
-                                                             (set-state this (fn [{:keys [cambo/variables]}]
-                                                                               (profile "cambo.container#run-variables::set-state" fragments
-                                                                                        {:query-data (.get-query-data this (props this) (context this))
-                                                                                         :variables variables
-                                                                                         :cambo/variables (assoc variables :variables next-variables)}))))))
-                                                (when cb
-                                                  (cb ready)))]
-                            (if force?
-                              (model/force model pathsets on-readystate)
-                              (model/prime model pathsets on-readystate))
-                            (set! (.-pending this) {:variables variables}))))
+                 (let [{:keys [route model]} (context this)
+                       {:keys [variables]} (state this)
+                       variables (get (.-pending this) :variables variables)
+                       variables (merge variables partial-vars)
+                       next-variables (prepare-variables variables route)
+                       pointers (create-fragment-pointers fragments (props this) next-variables)
+                       pathsets (into [] (mapcat :pathsets (vals pointers)))
+                       on-readystate (fn [ready]
+                                       (when ready
+                                         (set! (.-pending this) nil)
+                                         (set! (.-fragment-pointers this) pointers)
+                                         (.update-subscription this (context this))
+                                         (when (.-mounted this)
+                                           (set-state this (fn [{:keys [cambo/variables]}]
+                                                             {:query-data (.get-query-data this (props this) (context this))
+                                                              :variables variables
+                                                              :cambo/variables (assoc variables :variables next-variables)}))))
+                                       (when cb
+                                         (cb ready)))]
+                   (if force?
+                     (model/force model pathsets on-readystate)
+                     (model/prime model pathsets on-readystate))
+                   (set! (.-pending this) {:variables variables})))
 
                (initialize [this {:keys [cambo/variables]} props {:keys [route] :as context} vars]
-                 (profile "cambo.container#initialize" fragments
-                          (let [next-vars (prepare-variables vars route)]
-                            (.update-fragment-pointers this props next-vars)
-                            (.update-subscription this context)
-                            {:query-data (.get-query-data this props context)
-                             :variables vars
-                             :cambo/variables (assoc variables :variables next-vars)})))
+                 (let [next-vars (prepare-variables vars route)]
+                   (.update-fragment-pointers this props next-vars)
+                   (.update-subscription this context)
+                   {:query-data (.get-query-data this props context)
+                    :variables vars
+                    :cambo/variables (assoc variables :variables next-vars)}))
 
                (update-fragment-pointers [this props vars]
-                 (profile "cambo.container#update-fragment-pointers" fragments
-                          (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars))))
+                 (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars)))
 
                (update-subscription [this {:keys [model]}]
-                 (profile "cambo.container#update-subscription" fragments
-                          (let [pointers (.-fragment-pointers this)
-                                pathsets (into [] (mapcat :pathsets (vals pointers)))
-                                subscription (if-let [subscription (.-subscription this)]
-                                               (.update subscription model pathsets)
-                                               (container-subscription model pathsets (fn []
-                                                                                        (.handle-fragment-data-update this))))]
-                            (set! (.-subscription this) subscription))))
+                 (let [pointers (.-fragment-pointers this)
+                       pathsets (into [] (mapcat :pathsets (vals pointers)))
+                       subscription (if-let [subscription (.-subscription this)]
+                                      (.update subscription model pathsets)
+                                      (container-subscription model pathsets (fn []
+                                                                               (.handle-fragment-data-update this))))]
+                   (set! (.-subscription this) subscription)))
 
                (get-query-data [this props {:keys [model]}]
-                 (profile "cambo.container#get-query-data" fragments
-                          (let [pointers (.-fragment-pointers this)
-                                pathsets (mapcat :pathsets (vals pointers))
-                                graph (-> model model/with-path-info (model/get-cache pathsets))
-                                query-data (into {} (map (fn [[name {:keys [root]}]]
-                                                           ;; how would this happen?
-                                                           ;:when (get props name)
-                                                           [name (get-in graph root)])
-                                                         pointers))]
-                            query-data)))
+                 (let [pointers (.-fragment-pointers this)
+                       pathsets (mapcat :pathsets (vals pointers))
+                       graph (-> model model/with-path-info (model/get-cache pathsets))
+                       query-data (into {} (map (fn [[name {:keys [root]}]]
+                                                  ;; how would this happen?
+                                                  ;:when (get props name)
+                                                  [name (get-in graph root)])
+                                                pointers))]
+                   query-data))
 
                (handle-fragment-data-update [this]
                  (when (.-mounted this)
@@ -439,25 +455,24 @@
                    (dispose sub)))
 
                (shouldComponentUpdate [this next-props next-state next-context]
-                 (profile "cambo.container#shouldComponentUpdate" fragments
-                          (if (not= (.-children next-props)
-                                    (.. this -props -children))
-                            false
-                            (let [update-props (fn [props]
-                                                 (reduce (fn [props key]
-                                                           (let [path (get-path props key)]
-                                                             (assoc props key path)))
-                                                         props
-                                                         (keys fragments)))
-                                  current-props (update-props (props this))
-                                  current-state (state this)
-                                  current-context (context this)
-                                  next-props (update-props (get-props next-props))
-                                  next-state (get-state next-state)
-                                  next-context (get-context next-context)]
-                              (or (not= current-props next-props)
-                                  (not= current-state next-state)
-                                  (not= current-context next-context))))))
+                 (if (not= (get-children next-props)
+                           (children this))
+                   true
+                   (let [update-props (fn [props]
+                                        (reduce (fn [props key]
+                                                  (let [path (get-path props key)]
+                                                    (assoc props key path)))
+                                                props
+                                                (keys fragments)))
+                         current-props (update-props (props this))
+                         current-state (state this)
+                         current-context (context this)
+                         next-props (update-props (get-props next-props))
+                         next-state (get-state next-state)
+                         next-context (get-context next-context)]
+                     (or (not= current-props next-props)
+                         (not= current-state next-state)
+                         (not= current-context next-context)))))
 
                (render [this]
                  (let [{:keys [query-data cambo/variables]} (state this)
@@ -509,8 +524,7 @@
            (specify! (.-prototype Renderer)
              Object
              (run-queries [this {:keys [container model queries force]}]
-               (let [pathsets (profile "cambo.renderer#query-pathsets" queries
-                                       (query-pathsets queries container))
+               (let [pathsets (query-pathsets queries container)
                      on-readystate (fn [readystate]
                                      (if (.-mounted this)
                                        (set-state this {:readystate readystate})
@@ -542,36 +556,67 @@
              (render [this]
                (let [{:keys [container queries]} (props this)
                      {:keys [readystate]} (state this)
-                     container-props (into {} (for [[name query] queries]
-                                                [name {:cambo/path query}]))
+                     container-props (dissoc (props this) :container :model :queries :force)
+                     container-props (into container-props
+                                           (for [[name query] queries]
+                                             [name {:cambo/path query}]))
                      ;; TODO: support render prop -- handle js/undefined response
-                     children (when readystate
-                                (js/React.createElement container (->props container-props)))]
-                 (js/React.createElement StaticContainer #js {"shouldUpdate" (some? children)} children))))))
+                     container-element (when readystate
+                                         (js/React.createElement container
+                                                                 (->props container-props)
+                                                                 (children this)))]
+                 (js/React.createElement StaticContainer
+                                         #js {"shouldUpdate" (some? container-element)}
+                                         container-element))))))
 
-#?(:cljs (defn renderer [props]
-           (js/React.createElement Renderer (->props props))))
+#?(:cljs (defn renderer [props & children]
+           (apply js/React.createElement Renderer (->props props) children)))
 
-#?(:cljs (defn factory [cls]
-           (fn [props & children]
-             (apply React.createElement cls (->props props) children))))
+(defn factory [cls]
+  #?(:cljs (fn [props & children]
+             (apply React.createElement cls (->props props) children))
+     :clj (fn [& args])))
 
-(defn set-model
-  [this prop-key pathmap]
-  (let [{:keys [set]} (variables* this)
-        path (get-path (props this) prop-key)]
-    (set [(assoc-in {} path pathmap)] (fn [_]))))
+#?(:cljs (defn set-model
+           [this prop-key pathmap]
+           (let [{:keys [set]} (variables* this)
+                 path (get-path (props this) prop-key)]
+             (set [(assoc-in {} path pathmap)] (fn [_])))))
 
-(defn call-model
-  ([this path]
-   (call-model this path nil))
-  ([this path args]
-   (call-model this path args {}))
-  ([this path args queries]
-   (call-model this path args queries (fn [_])))
-  ([this path args queries cb]
-   (let [{:keys [call]} (variables* this)
-         queries (cond-> queries
-                         (:this queries) (update :this pull)
-                         (:refs queries) (update :refs pull))]
-     (call path args queries cb))))
+#?(:cljs (defn call-model
+           ([this path]
+            (call-model this path nil))
+           ([this path args]
+            (call-model this path args {}))
+           ([this path args queries]
+            (call-model this path args queries (fn [_])))
+           ([this path args queries cb]
+            (let [{:keys [call]} (variables* this)
+                  queries (cond-> queries
+                                  (:this queries) (update :this pull)
+                                  (:refs queries) (update :refs pull))]
+              (call path args queries cb)))))
+
+;;; MACROS
+
+#?(:clj
+   (defn- cljs-env? [env]
+     (boolean (:ns env))))
+
+#?(:clj
+   (defmacro if-cljs
+     "Return `then` if we are generating cljs code and `else` for Clojure code."
+     [then else]
+     (if (cljs-env? &env) then else)))
+
+#?(:clj
+   (defmacro defcomponent [name & forms]
+     `(if-cljs
+        (cambo.component.macros/defcomponent-cljs ~name ~@forms)
+        (cambo.component.macros/defcomponent-clj ~name ~@forms))))
+
+#?(:clj
+   (defmacro defcontainer [name & forms]
+     `(if-cljs
+        (cambo.component.macros/defcontainer-cljs ~name ~@forms)
+        (cambo.component.macros/defcontainer-clj ~name ~@forms))))

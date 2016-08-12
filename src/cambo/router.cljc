@@ -420,7 +420,8 @@
    :request (vec pathsets)
    :matched []
    :optimized []
-   :unhandled []})
+   :unhandled []
+   :invalidate []})
 
 (defn execute
   [route-tree context runner]

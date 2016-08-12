@@ -1,5 +1,5 @@
 (ns examples.benchmarks
-  (:require-macros [cambo.component.macros :refer [defcomponent defcontainer profile]])
+  (:require-macros [cambo.component :refer [defcomponent defcontainer]])
   (:require [examples.queries :as queries]
             [cognitect.transit]
             [cambo.core :as core]

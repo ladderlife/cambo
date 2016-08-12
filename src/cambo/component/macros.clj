@@ -51,7 +51,7 @@
     (into ['Object]
           (map reshape* dt))))
 
-(defmacro defcomponent [name & forms]
+(defmacro defcomponent-cljs [name & forms]
   (let [rname (if &env
                 ;; copied from om.next -- no idea
                 (:name (ana/resolve-var (dissoc &env :locals) name))
@@ -101,7 +101,7 @@
             (recur remaining specs (into component component'))))
         {:component component :specs specs}))))
 
-(defmacro defcontainer [name & forms]
+(defmacro defcontainer-cljs [name & forms]
   (let [{:keys [specs component]} (collect-container forms)
         component-name (with-meta (gensym (str name "_")) {:anonymous true
                                                            :display-name (str name "*")})
@@ -109,23 +109,27 @@
                        (str (-> &env :ns :name) "/" name)
                        'js/undefined)]
     `(do
-       (defcomponent ~component-name ~@component)
+       (defcomponent-cljs ~component-name ~@component)
 
        (def ~name (let [container# (cambo.component/create-container ~component-name ~specs)]
                     (set! (.-displayName container#) ~display-name)
                     container#)))))
 
-(defmacro profile
-  ([name args]
-   `(let [start# (js/window.performance.now)]
-      (fn []
-        (let [duration# (- (js/window.performance.now) start#)]
-          (when cambo.component/*profile*
-            (swap! cambo.component/*profile* update ~name (fnil conj []) [~args duration#]))))))
-  ([name args & body]
-   `(let [start# (js/window.performance.now)
-          result# (do ~@body)
-          duration# (- (js/window.performance.now) start#)]
-      (when cambo.component/*profile*
-        (swap! cambo.component/*profile* update ~name (fnil conj []) [~args duration#]))
-      result#)))
+(defmacro defcomponent-clj [name & forms]
+  `(defrecord ~name []))
+
+(defn default-prepare-variables [vars _]
+  vars)
+
+(defmacro defcontainer-clj [name & forms]
+  (let [{:keys [specs component]} (collect-container forms)
+        {:keys [initial-variables prepare-variables fragments]
+         :or {initial-variables {} prepare-variables default-prepare-variables}} specs]
+    `(def ~name
+       (reify
+         cambo.component/IFragments
+         (~'fragment-names [_#]
+           ~(into #{} (keys fragments)))
+         (~'fragment [_# name#]
+           (cambo.component/get-container-fragment
+             ~fragments name# ~(prepare-variables initial-variables nil)))))))

@@ -1,14 +1,7 @@
 (ns cambo.model
   (:refer-clojure :exclude [get set force])
-  #?(:cljs (:require-macros [cambo.component.macros :refer [profile]]))
   (:require [cambo.core :as core]
             [cambo.graph :as graph]))
-
-#?(:clj (defmacro profile
-          ([name args]
-            `(fn []))
-          ([name args & body]
-            `(do ~@body))))
 
 (defrecord Model
   [cache datasource subscribers])
@@ -35,7 +28,7 @@
    @cache)
   ([{:keys [cache] :as m} pathsets]
    (let [c @cache]
-     (:graph (profile "cambo.model#get-cache" pathsets (graph/get c pathsets (get-options m)))))))
+     (:graph (graph/get c pathsets (get-options m))))))
 
 (defn publish [{:keys [subscribers]}]
   (let [subs @subscribers]
@@ -56,23 +49,21 @@
 
 (defn set-cache*
   [{:keys [cache] :as m} pathmaps]
-  (profile "cambo.model#set-cache*" pathmaps
-           (swap! cache (fn [cache]
-                          (let [{:keys [graph]} (profile "cambo.model#set-cache*::set" pathmaps (graph/set cache pathmaps))]
-                            graph)))
-           (publish m)
-           nil))
+  (swap! cache (fn [cache]
+                 (let [{:keys [graph]} (graph/set cache pathmaps)]
+                   graph)))
+  (publish m)
+  nil)
 
 (defn set-cache
   [{:keys [cache] :as m} pathmaps]
-  #?(:cljs (profile "cambo.model#set-cache" pathmaps
-                    (let [ps (atom nil)
-                          c (swap! cache (fn [cache]
-                                           (let [{:keys [graph paths]} (profile "cambo.model#set-cache::set" pathmaps (graph/set cache pathmaps))]
-                                             (reset! ps paths)
-                                             graph)))]
-                      (publish m)
-                      (:graph (profile "cambo.model#set-cache::get" @ps (graph/get c @ps {:normalize false})))))
+  #?(:cljs (let [ps (atom nil)
+                 c (swap! cache (fn [cache]
+                                  (let [{:keys [graph paths]} (graph/set cache pathmaps)]
+                                    (reset! ps paths)
+                                    graph)))]
+             (publish m)
+             (:graph (graph/get c @ps {:normalize false})))
      :clj (with-local-vars [ps nil]
             (let [c (swap! cache (fn [cache]
                                    (let [{:keys [graph paths]} (graph/set cache pathmaps)]
@@ -118,17 +109,17 @@
 
 (defn prime
   [{:keys [cache datasource] :as m} pathsets cb]
-  (let [{:keys [graph missing]} (profile "cambo.model#prime::get" pathsets (graph/get @cache pathsets (get-options m)))]
+  (let [{:keys [graph missing]} (graph/get @cache pathsets (get-options m))]
     (if (seq missing)
       (core/get datasource missing (fn [{:keys [graph]}]
-                                     (profile "cambo.model#prime::set" graph (set-cache* m [graph]))
+                                     (set-cache* m [graph])
                                      (cb true)))
       (cb {:ready true}))))
 
 (defn force
   [{:keys [datasource] :as m} pathsets cb]
   (core/get datasource pathsets (fn [{:keys [graph]}]
-                                  (profile "cambo.model#force::set" graph (set-cache* m [graph]))
+                                  (set-cache* m [graph])
                                   (cb true))))
 
 ;; TODO: rest of falcor model interface as necessary

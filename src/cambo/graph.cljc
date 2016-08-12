@@ -288,7 +288,9 @@
   (letfn [(invalidate-path [graph path]
             (let [key (last path)
                   path (butlast path)]
-              (update-in graph path dissoc key)))]
+              (if (seq path)
+                (update-in graph path dissoc key)
+                (dissoc graph key))))]
     {:graph (reduce invalidate-path graph paths)
      :paths paths}))
 

@@ -1,5 +1,5 @@
 (ns examples.todo
-  (:require-macros [cambo.component.macros :refer [defcomponent defcontainer profile]])
+  (:require-macros [cambo.component :refer [defcomponent defcontainer]])
   (:require [cambo.component :as comp :refer [props get-fragment]]
             [cambo.core :as core]
             [cambo.http :refer [http-datasource]]
@@ -7,7 +7,6 @@
             [cljsjs.react]
             [cljsjs.react.dom]
             [cljs.pprint :refer [pprint]]))
-
 
 (enable-console-print!)
 
@@ -111,7 +110,8 @@
                              (h1 nil "Todos")
                              (h3 nil name)
                              (todo-entry {:on-entry #(.handleEntry this %)})
-                             (todo-list {:user user})))))
+                             (todo-list {:user user})
+                             (comp/children this)))))
 
 (def todo-app (comp/factory TodoApp))
 
@@ -129,11 +129,34 @@
                                        {:question/questions [{(core/range 0 10) [(get-fragment Field :question 4)]}]}])}
               (render [this] nil))
 
-(def model (model/model {:datasource (http-datasource "http://localhost:4000/cambo"
-                                                      {"X-CSRF-TOKEN" "abc123"})}))
+(deftype LoggingDataSource [ds]
+  core/IDataSource
+  (get [this pathsets cb]
+    (core/get ds pathsets (fn [{:keys [unhandled] :as result}]
+                           ;; TODO: use a warn or something from the real dev tools?
+                           ;; - should never see this -- means your queries are wrong
+                           (when (seq unhandled)
+                             (println "CAMBO: unhandled" unhandled))
+                           (cb result))))
+  (set [this pathmaps cb]
+    (core/set ds pathmaps cb))
+  (call [this path args queries cb]
+    (core/call ds path args queries (fn [result]
+                                     ;; TODO: use a warn or something from the real dev tools?
+                                     ;; - should never see this -- means your queries are wrong
+                                     (println "CALL:" result)
+                                     (cb result)))))
+
+(defn logging-datasource [ds]
+  (LoggingDataSource. ds))
+
+(def model (model/model {:datasource (logging-datasource
+                                       (http-datasource "http://localhost:4000/cambo"
+                                                        {"X-CSRF-TOKEN" "abc123"}))}))
 
 (js/ReactDOM.render
   (comp/renderer {:queries {:user [:current-user]}
                   :container TodoApp
-                  :model model})
+                  :model model}
+                 (h1 #js{}  "I am a child"))
   (.getElementById js/document "app"))
