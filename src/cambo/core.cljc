@@ -83,12 +83,30 @@
 (defn range? [x]
   (instance? Range x))
 
-;; TODO: remove duplicates
-;; TODO: group into ranges?
+(defn ranges [ns]
+  (->> ns
+       distinct
+       sort
+       (reduce (fn [acc n]
+                 (let [a (-> acc last last)]
+                   (if (or (nil? a)
+                           (not= n (inc a)))
+                     (conj acc [n])
+                     (update acc (dec (count acc)) conj n))))
+               [])
+       (map (fn [ns]
+              (let [from (first ns)
+                    to (last ns)]
+                (range from (inc to)))))
+       (into [])))
+
 (defn keyset [keys]
   (if (= 1 (count keys))
     (first keys)
-    (into [] keys)))
+    (let [{ints true keys false} (group-by integer? keys)
+          keys (cond-> (into #{} keys)
+                       (seq ints) (into (ranges ints)))]
+      (into [] keys))))
 
 (defn keyset? [x]
   (or (key? x)
@@ -126,44 +144,78 @@
       (into [key] path))
     (map vector (keys keyset))))
 
+(defn expand-pathset'
+  [pathset]
+  (letfn [(inner-expand [path [keyset & pathset]]
+            (let [paths (map #(conj path %) (keys keyset))]
+              (if (seq pathset)
+                (mapcat #(inner-expand % pathset) paths)
+                paths)))]
+    (inner-expand [] pathset)))
+
+(defn expand-pathset''
+  [pathset]
+  (letfn [(walk-pathset [expansions path [keyset & pathset]]
+            (let [paths (into [] (map #(conj path %)) (keys keyset))]
+              (if (seq pathset)
+                (reduce (fn [expansions path]
+                          (walk-pathset expansions path pathset))
+                        expansions
+                        paths)
+                (reduce (fn [expansions path]
+                          (conj! expansions path))
+                        expansions
+                        paths))))]
+    (persistent! (walk-pathset (transient []) [] pathset))))
+
+(defn expand-pathset'''
+  [pathset]
+  (letfn [(pathset-seq [path [keyset & pathset]]
+            (let [paths (into [] (map #(conj path %)) (keys keyset))]
+              (if (seq pathset)
+                (mapcat #(pathset-seq % pathset) paths)
+                paths)))]
+    (into [] (pathset-seq [] pathset))))
+
 (defn expand-pathsets [pathsets]
-  (mapcat expand-pathset pathsets))
+  (into [] (mapcat expand-pathset''' pathsets)))
 
 (def leaf ::leaf)
 (defn leaf? [v] (= leaf v))
 
-;; TODO: remember wtf this is doing -- this has to be accidentally quadratic
-(defn pathsets*
-  [tree]
-  (if (leaf? tree)
-    ['()]
-    (->> tree
-         (reduce (fn [m [key sub-tree]]
-                   (let [paths (pathsets* sub-tree)]
-                     (reduce #(update %1 %2 (fnil conj []) key)
-                             m
-                             paths)))
-                 {})
-         (map (fn [[path keys]]
-                (conj path (keyset keys)))))))
-
-;; TODO: kill this once I remember wtf pathsets* is doing
 (defn pathsets [tree]
-  (map vec (pathsets* tree)))
+  (letfn [(inner-pathsets [path tree]
+            (mapcat (fn [[sub-tree kvs]]
+                      (let [path (conj path (keyset (map first kvs)))]
+                        (if (leaf? sub-tree)
+                          [path]
+                          (inner-pathsets path sub-tree))))
+                    (group-by second tree)))]
+    (inner-pathsets [] tree)))
 
-;; TODO: try and make tree stuff not do deep assoc-in -- maybe sort / recurse to minimize deep tree rebuilding
-;; TODO: same as above but with transients
+(defn length-tree'
+  [length pathsets]
+  (letfn [(keys [keyset]
+            (if (vector? keyset)
+              keyset
+              [keyset]))
+          (pathset-tree [tree [ks & pathset]]
+            (if (seq pathset)
+              (reduce (fn [tree k]
+                        (update tree k pathset-tree pathset))
+                      tree
+                      (keys ks))
+              (reduce (fn [tree k]
+                        (assoc tree k leaf))
+                      tree
+                      (keys ks))))]
+    [length (reduce pathset-tree {} pathsets)]))
 
 (defn length-tree
   [pathsets]
-  (->> pathsets
-       (group-by count)
-       (map (fn [[length pathsets]]
-              (loop [[p & ps] (expand-pathsets pathsets) tree {}]
-                (if p
-                  (recur ps (assoc-in tree p leaf))
-                  [length tree]))))
-       (into {})))
+  (into {}
+        (map (fn [[length tree]] (length-tree' length tree)))
+        (group-by count pathsets)))
 
 (defn length-tree-pathsets
   [length-tree]
