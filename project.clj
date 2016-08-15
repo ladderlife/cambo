@@ -37,7 +37,8 @@
                         :compiler {:main "examples.benchmarks"
                                    :asset-path "cljs/bench-out"
                                    :output-to  "resources/public/cljs/bench.js"
-                                   :output-dir "resources/public/cljs/bench-out"}}
+                                   :output-dir "resources/public/cljs/bench-out"
+                                   :optimizations :advanced}}
                        {:id "prod"
                         :source-paths ["src"]
                         :figwheel true

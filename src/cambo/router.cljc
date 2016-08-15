@@ -1,7 +1,8 @@
 (ns cambo.router
   (:refer-clojure :exclude [get set])
   (:require [cambo.core :as core]
-            [cambo.graph :as graph]))
+            [cambo.graph :as graph]
+            [cambo.core :as cam]))
 
 ;;; ROUTES
 
@@ -455,6 +456,17 @@
   ([router pathsets env]
    (last (gets router pathsets env))))
 
+(defn pull
+  ([router query]
+   (pull router query {}))
+  ([router query env]
+   (let [pathsets (core/query-pathsets query)
+         result (last (gets router pathsets env))]
+     (into {} (for [[key value] result]
+                (if (not= key :graph)
+                  [key (core/pathsets-query value)]
+                  [key value]))))))
+
 (defn sets [{:keys [route-tree set-middleware]} pathmaps env]
   (let [{:keys [graph paths]} (graph/set {} pathmaps)
         ;; TODO: not sure if this is necessary
@@ -526,7 +538,9 @@
   ([router path args queries]
    (call router path args queries {}))
   ([router path args queries env]
-   (last (calls router path args queries env))))
+   (let [queries (into {} (for [[name query] queries]
+                            [name (cam/query-pathsets query)]))]
+     (last (calls router path args queries env)))))
 
 ;; TODO: this name sucks
 (defn handle
@@ -536,6 +550,8 @@
    (case method
      :get (let [{:keys [pathsets]} request]
             (get router pathsets env))
+     :pull (let [{:keys [query]} request]
+            (pull router query env))
      :set (let [{:keys [pathmaps]} request]
             (set router pathmaps env))
      :call (let [{:keys [path args queries]} request]
@@ -556,9 +572,9 @@
 (defrecord RouterDatasource
   [router env]
   core/IDataSource
-  (get [_ pathsets cb]
+  (pull [_ query cb]
     ;; TODO: doesn't impl `:missing`
-    (cb (get router pathsets env)))
+    (cb (pull router query env)))
   (set [_ pathmaps cb]
     (cb (set router pathmaps env)))
   (call [_ path args queries cb]

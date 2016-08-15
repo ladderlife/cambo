@@ -55,8 +55,8 @@
 (defrecord HttpDataSource
   [url opts]
   core/IDataSource
-  (get [_ pathsets cb]
-    (http-send url {:method :get :pathsets pathsets} opts cb))
+  (pull [_ query cb]
+    (http-send url {:method :pull :query query} opts cb))
   (set [_ pathmaps cb]
     (http-send url {:method :set :pathmaps pathmaps} opts cb))
   (call [_ path args queries cb]

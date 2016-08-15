@@ -204,7 +204,14 @@
                               2 nil
                               :cambo/path [:users]}}
               :missing [[:users 4 [:user/name :user/age]]]}
-             (get cache [[:users (range 0 5) [:user/name :user/age]]]))))))
+             (get cache [[:users (range 0 5) [:user/name :user/age]]]))))
+    (testing "getting a leaf ref range"
+      #_(is (= {:graph {:users {0 {:cambo/path [:user/by-id 123]}
+                              1 nil
+                              2 nil
+                              :cambo/path [:users]}}
+              :missing [[:users 4]]}
+             (get cache [[:users (range 0 5)]]))))))
 
 (deftest pull-basic-test
   (let [pull #(pull %1 %2 {:normalize true
@@ -413,7 +420,14 @@
               :missing [{:users [{4 [:user/name
                                      :user/age]}]}]}
              (pull cache [{:users [{(range 0 5) [:user/name
-                                                 :user/age]}]}]))))))
+                                                 :user/age]}]}]))))
+    (testing "getting a leaf ref range"
+      (is (= {:graph {:users {0 {:cambo/path [:user/by-id 123]}
+                              1 nil
+                              2 nil
+                              :cambo/path [:users]}}
+              :missing [{:users [4]}]}
+             (pull cache [{:users [(range 0 5)]}]))))))
 
 (deftest missing-test
   (testing "unoptimized get"

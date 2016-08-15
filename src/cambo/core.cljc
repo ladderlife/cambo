@@ -5,7 +5,7 @@
 
 (defprotocol IDataSource
   ;; TODO: do we want this to be a single call cb, or observable?
-  (get [this pathsets cb])
+  (pull [this query cb])
   (set [this pathmaps cb])
   (call [this path args queries cb]))
 
@@ -13,7 +13,6 @@
 
 (defrecord Atom [])
 
-;; TODO: remember significance of empty atom vs nil value atom ;p
 (defn atom
   ([]
    (Atom.))
@@ -299,14 +298,17 @@
   [x]
   (vector? x))
 
-(defn prepend-query [[k & path] query]
-  (cond
-    (seq path) [{k (prepend-query path query)}]
-    (seq query) [{k query}]
-    :else [k]))
+(defn prepend-query
+  ([path]
+   (prepend-query path nil))
+  ([[k & path] query]
+   (cond
+     (seq path) [{k (prepend-query path query)}]
+     (seq query) [{k query}]
+     :else [k])))
 
 ;; TODO: this has proved useful -- make it robust!
-(defn pull [query]
+(defn query-pathsets [query]
   (letfn [(create-range [min max]
             (cond
               ;; TODO: replace with a range/max when we got that
@@ -331,7 +333,57 @@
           leafs (into [] (remove map? query))
           paths (for [join (filter map? query)
                       :let [[key query] (first join)]
-                      paths (pull query)]
+                      paths (query-pathsets query)]
                   (into [key] paths))]
       (cond-> (into [] paths)
               (seq leafs) (conj [leafs])))))
+
+(defn eval-query
+  [query]
+  (letfn [(expand-range [[name key min max] query]
+            (assert (= name 'range))
+            (let [range (cond
+                          (and (nil? min) (nil? max)) (range 0 100)
+                          (and (nil? max)) (range 0 min)
+                          :else (range min max))]
+              (if (seq query)
+                {key [{range query}]}
+                {key [range]})))]
+    (into []
+          (map (fn [key]
+                 (cond
+                   (list? key) (expand-range key nil)
+                   (join? key) (let [[key query] (first key)]
+                                 (if (list? key)
+                                   (expand-range key (eval-query query))
+                                   {key (eval-query query)}))
+                   :else key)))
+          query)))
+
+(defn tree-query
+  [tree]
+  (reduce (fn [query [key tree]]
+            (if (leaf? tree)
+              (conj query key)
+              (conj query {key (tree-query tree)})))
+          []
+          tree))
+
+(defn pathsets-query [pathsets]
+  (letfn [(keys [keyset]
+            (if (vector? keyset)
+              keyset
+              [keyset]))
+          (merge-query-tree [tree [ks & pathset]]
+            (if (seq pathset)
+              (reduce (fn [tree k]
+                        (update tree k merge-query-tree pathset))
+                      tree
+                      (keys ks))
+              (reduce (fn [tree k]
+                        (assoc tree k leaf))
+                      tree
+                      (keys ks))))]
+    (tree-query (reduce merge-query-tree
+                        {}
+                        pathsets))))

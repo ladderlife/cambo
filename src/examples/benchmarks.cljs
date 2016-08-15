@@ -18,7 +18,7 @@
 
 (extend-type EmptyDataSource
   core/IDataSource
-  (get [this pathsets cb])
+  (pull [this query cb])
   (set [this pathmaps cb])
   (call [this path args queries cb]))
 

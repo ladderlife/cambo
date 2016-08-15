@@ -101,8 +101,22 @@
             (recur remaining specs (into component component'))))
         {:component component :specs specs}))))
 
+(defn normalize-fragments [fragments]
+  (into {} (for [[name fragment-fn] fragments]
+             [name (if (seq? fragment-fn)
+                     fragment-fn
+                     `(fn [~'_] ~fragment-fn))])))
+
+(defn normalize-specs [specs]
+  (let [specs (merge {:initial-variables {}
+                      :prepare-variables `(fn [vars# _#] vars#)}
+                     specs)
+        specs (update specs :fragments normalize-fragments)]
+    specs))
+
 (defmacro defcontainer-cljs [name & forms]
   (let [{:keys [specs component]} (collect-container forms)
+        specs (normalize-specs specs)
         component-name (with-meta (gensym (str name "_")) {:anonymous true
                                                            :display-name (str name "*")})
         display-name (if &env
@@ -111,25 +125,27 @@
     `(do
        (defcomponent-cljs ~component-name ~@component)
 
-       (def ~name (let [container# (cambo.component/create-container ~component-name ~specs)]
+       (def ~name (let [container# (cambo.component/create-container* ~specs ~component-name)]
                     (set! (.-displayName container#) ~display-name)
                     container#)))))
 
 (defmacro defcomponent-clj [name & forms]
   `(defrecord ~name []))
 
-(defn default-prepare-variables [vars _]
-  vars)
-
 (defmacro defcontainer-clj [name & forms]
   (let [{:keys [specs component]} (collect-container forms)
-        {:keys [initial-variables prepare-variables fragments]
-         :or {initial-variables {} prepare-variables default-prepare-variables}} specs]
+        {:keys [initial-variables prepare-variables fragments]} (normalize-specs specs)
+        fragment-names (into #{} (keys fragments))]
     `(def ~name
        (reify
          cambo.component/IFragments
          (~'fragment-names [_#]
-           ~(into #{} (keys fragments)))
-         (~'fragment [_# name#]
+           ~fragment-names)
+         (~'fragment [this# name#]
            (cambo.component/get-container-fragment
-             ~fragments name# ~(prepare-variables initial-variables nil)))))))
+             this# name# (~prepare-variables ~initial-variables nil)))
+         cambo.component/IContainer
+         (~'get-container-fragment [_# name# vars#]
+           (let [fragment-fn# (get ~fragments name#)
+                 fragment# (cambo.component/container-fragment fragment-fn# vars#)]
+             fragment#))))))

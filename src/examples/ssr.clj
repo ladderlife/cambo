@@ -28,6 +28,6 @@
                                     (js/console.log "Hello from Todos!"))))
 
 (let [fragment (comp/get-fragment TodoList :todos)]
-  (comp/pathsets fragment))
+  (comp/full-fragment fragment))
 
-(comp/query-pathsets {:todos [:todos/all]} TodoList)
+(comp/build-query {:todos [:todos/all]} TodoList)

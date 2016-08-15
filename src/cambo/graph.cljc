@@ -141,7 +141,6 @@
 
                                              ;; TODO: revisit refs ;p
                                              (and (ref? node)
-                                                  (seq query)
                                                   (not normalize))
                                              (let [ref-path (:path node)
                                                    ;; TODO: we need to assert this ref path too
@@ -299,9 +298,9 @@
 ;; have to extend type due to get / set names clashing with core ... oops!
 (extend-type GraphDataSource
   core/IDataSource
-  (get [{:keys [graph]} pathsets cb]
-    (cb (get @graph pathsets {:normalize true
-                              :boxed true}))
+  (pull [{:keys [graph]} query cb]
+    (cb (pull @graph query {:normalize true
+                            :boxed true}))
     nil)
   (set [{:keys [graph]} pathmaps cb]
     #?(:cljs (let [ps (clojure.core/atom nil)]

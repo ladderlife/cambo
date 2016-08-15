@@ -131,13 +131,13 @@
 
 (deftype LoggingDataSource [ds]
   core/IDataSource
-  (get [this pathsets cb]
-    (core/get ds pathsets (fn [{:keys [unhandled] :as result}]
-                           ;; TODO: use a warn or something from the real dev tools?
-                           ;; - should never see this -- means your queries are wrong
-                           (when (seq unhandled)
-                             (println "CAMBO: unhandled" unhandled))
-                           (cb result))))
+  (pull [this query cb]
+    (core/pull ds query (fn [{:keys [unhandled] :as result}]
+                          ;; TODO: use a warn or something from the real dev tools?
+                          ;; - should never see this -- means your queries are wrong
+                          (when (seq unhandled)
+                            (println "CAMBO: unhandled" unhandled))
+                          (cb result))))
   (set [this pathmaps cb]
     (core/set ds pathmaps cb))
   (call [this path args queries cb]

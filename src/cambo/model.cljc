@@ -30,6 +30,11 @@
    (let [c @cache]
      (:graph (graph/get c pathsets (get-options m))))))
 
+(defn pull-cache
+  [{:keys [cache] :as m} query]
+  (let [c @cache]
+    (:graph (graph/pull c query (get-options m)))))
+
 (defn publish [{:keys [subscribers]}]
   (let [subs @subscribers]
     (doseq [[_ cb] subs]
@@ -78,19 +83,14 @@
                  (:graph (graph/invalidate cache paths))))
   paths)
 
-;; TODO: look at how falcor handles boxing / normalization for intermediate results / final results
-
-(defn get
-  ;; TODO: single call cb, or subscription w/ readystate?
-  ;; TODO: loop?
-  [{:keys [cache datasource] :as m} pathsets cb]
-  (let [{:keys [graph missing]} (graph/get @cache pathsets (get-options m))]
-    (if (seq missing)
-      (core/get datasource missing (fn [{:keys [graph]}]
-                                     (set-cache m [graph])
-                                     (cb (:graph (graph/get @cache pathsets (get-options m))))))
-      (cb graph)))
-  nil)
+(defn pull
+  [{:keys [cache datasource] :as m} query cb]
+  (let [{:keys [graph missing]} (graph/pull @cache query (get-options m))]
+    (if (empty? missing)
+      (cb graph)
+      (core/pull datasource missing (fn [{:keys [graph]}]
+                                      (set-cache m [graph])
+                                      (cb (:graph (graph/pull @cache query (get-options m)))))))))
 
 (defn set
   [{:keys [datasource] :as m} pathmaps cb]
@@ -108,18 +108,18 @@
                                             (cb graph))))
 
 (defn prime
-  [{:keys [cache datasource] :as m} pathsets cb]
-  (let [{:keys [graph missing]} (graph/get @cache pathsets (get-options m))]
+  [{:keys [cache datasource] :as m} query cb]
+  (let [{:keys [missing]} (graph/pull @cache query (get-options m))]
     (if (seq missing)
-      (core/get datasource missing (fn [{:keys [graph]}]
-                                     (set-cache* m [graph])
-                                     (cb true)))
+      (core/pull datasource missing (fn [{:keys [graph]}]
+                                      (set-cache* m [graph])
+                                      (cb true)))
       (cb {:ready true}))))
 
 (defn force
-  [{:keys [datasource] :as m} pathsets cb]
-  (core/get datasource pathsets (fn [{:keys [graph]}]
-                                  (set-cache* m [graph])
-                                  (cb true))))
+  [{:keys [cache datasource] :as m} query cb]
+  (core/pull datasource query (fn [{:keys [graph]}]
+                                (set-cache* m [graph])
+                                (cb true))))
 
 ;; TODO: rest of falcor model interface as necessary

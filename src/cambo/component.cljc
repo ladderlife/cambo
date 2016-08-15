@@ -1,9 +1,11 @@
 (ns cambo.component
   #?(:cljs (:require-macros [cambo.component.macros]))
-  (:require [cambo.core :as core :refer [pull]]
+  (:require [cambo.core :as core]
             [cambo.model :as model]
             #?(:clj [cambo.component.macros])
             #?(:cljs [cljsjs.react])))
+
+;;; REACT
 
 (def props-key "cambo$props")
 
@@ -78,11 +80,15 @@
   [comp]
   (get-context (.-context comp)))
 
+;;; HELPERS
+
 (defn range-seq
   [elements]
   (->> elements
        (filter (comp integer? first))
        (sort-by first)))
+
+;;; FRAGMENTS
 
 (defprotocol IFragments
   (fragment-names [this])
@@ -91,176 +97,93 @@
 (defn fragments? [x]
   (satisfies? IFragments x))
 
-;; TODO: this caching logic is ugly / spread around / duplicated / etc ... works (I think) but hammock it a bit!
 (defprotocol IFragment
-  (pathsets [this])
-  ;; HACK: this is only here to facilitate caching -- same logic for all fragment types
-  (expand [this]))
+  (query [this]))
 
-(defn fragment? [x]
-  (satisfies? IFragment x))
+(defn fragment? [x] (satisfies? IFragment x))
 
-(defn update-fragments
-  [f pathsets]
-  (letfn [(update-pathset [pathset]
-            (let [path (into [] (butlast pathset))
-                  x (last pathset)]
-              (cond
-                (fragment? x) (for [pathset (f fragment)]
-                                (into path pathset))
-                (core/key? x) [(conj path x)]
-                (vector? x) (let [keys (into [] (filter core/key? x))
-                                  fragments (filter fragment? x)]
-                              (cond-> []
-                                      (seq keys) (conj (conj path keys))
-                                      (seq fragments) (into (for [fragment fragments
-                                                                  pathset (f fragment)]
-                                                              (into path pathset))))))))]
-    (into [] (mapcat update-pathset) pathsets)))
-
-(deftype Fragment [pathsets]
+(deftype LazyFragment [delay]
   IFragment
-  (pathsets [_]
-    pathsets)
-  (expand [this]
-    (if-let [cached-expand (.-cached-expand this)]
-      cached-expand
-      (let [expanded-pathsets (update-fragments expand (pathsets this))]
-        (set! (.-cached-expand this) expanded-pathsets)
-        expanded-pathsets))))
+  (query [_] @delay))
 
-#?(:clj (deftype RecursiveContainerFragment [comp name count]
-          IFragment
-          (pathsets [this]
-            (let [fragment (fragment comp name)
-                  pathsets (update-fragments (fn [fragment]
-                                               (if (instance? RecursiveContainerFragment fragment)
-                                                 (if (> count 0)
-                                                   (do
-                                                     (assert (and (= comp (.-comp fragment))
-                                                                  (= name (.-name fragment)))
-                                                             "recursive fragment can't contain other recursive fragments")
-                                                     [[[(RecursiveContainerFragment. (.-comp fragment)
-                                                                                     (.-name fragment)
-                                                                                     (dec count))]]])
-                                                   [])
-                                                 [[[fragment]]]))
-                                             (pathsets fragment))]
-              pathsets))
-          (expand [this]
-            (let [expanded-pathsets (update-fragments expand (pathsets this))]
-              expanded-pathsets))))
+(defprotocol IRecursive
+  (depth [this]))
 
-#?(:cljs (deftype RecursiveContainerFragment [comp name count]
-           IFragment
-           (pathsets [this]
-             (if-let [cached-pathsets (.-cached-pathsets this)]
-               cached-pathsets
-               (let [fragment (fragment comp name)
-                     pathsets (update-fragments (fn [fragment]
-                                                  (if (instance? RecursiveContainerFragment fragment)
-                                                    (if (> count 0)
-                                                      (do
-                                                        (assert (and (= comp (.-comp fragment))
-                                                                     (= name (.-name fragment)))
-                                                                "recursive fragment can't contain other recursive fragments")
-                                                        [[[(RecursiveContainerFragment. (.-comp fragment)
-                                                                                        (.-name fragment)
-                                                                                        (dec count))]]])
-                                                      [])
-                                                    [[[fragment]]]))
-                                                (pathsets fragment))]
-                 (set! (.-cached-pathsets this) pathsets)
-                 pathsets)))
-           (expand [this]
-             (if-let [cached-expand (.-cached-expand this)]
-               cached-expand
-               (let [expanded-pathsets (update-fragments expand (pathsets this))]
-                 (set! (.-cached-expand this) expanded-pathsets)
-                 expanded-pathsets)))))
+(defn recursive? [x] (satisfies? IRecursive x))
 
-#?(:clj (deftype ContainerFragment [comp name]
-          IFragment
-          (pathsets [this]
-            (pathsets (fragment comp name)))
-          (expand [this]
-            (update-fragments expand (pathsets this)))))
+(deftype RecursiveFragment [fragment depth]
+  IFragment
+  (query [_]
+    (query fragment))
+  IRecursive
+  (depth [_] depth))
 
-#?(:cljs (deftype ContainerFragment [comp name]
-           IFragment
-           (pathsets [this]
-             (if-let [cached-pathsets (.-cached-pathsets this)]
-               cached-pathsets
-               (let [pathsets (pathsets (fragment comp name))]
-                 (set! (.-cached-pathsets this) pathsets)
-                 pathsets)))
-           (expand [this]
-             (if-let [cached-expand (.-cached-expand this)]
-               cached-expand
-               (let [expanded-pathsets (update-fragments expand (pathsets this))]
-                 (set! (.-cached-expand this) expanded-pathsets)
-                 expanded-pathsets)))))
-
-(def ^:dynamic *fragment-cache* (atom {}))
-
-;; TODO: rework this lol
 (defn get-fragment
-  ;; curiosity: overhead of always `swap!` vs deref & check and only `swap!` if not there
-  ([comp name]
-   (assert (fragments? comp))
-   (let [cache (swap! *fragment-cache*
-                      (fn [cache]
-                        (if (contains? cache [comp name])
-                          cache
-                          (assoc cache [comp name] (ContainerFragment. comp name)))))]
-     (get cache [comp name])))
-  ([comp name count]
-   (assert (fragments? comp))
-   (let [cache (swap! *fragment-cache*
-                      (fn [cache]
-                        (if (contains? cache [comp name count])
-                          cache
-                          (assoc cache [comp name count] (RecursiveContainerFragment. comp name count)))))]
-     (get cache [comp name count]))))
+  ([fragments name]
+   (fragment fragments name))
+  ([fragments name depth]
+   (RecursiveFragment. (get-fragment fragments name) depth)))
 
-(defn local-query [root fragment]
-  (letfn [(stub-fragments [pathset]
-            (let [path (into [] (butlast pathset))
-                  x (last pathset)]
-              (cond
-                (fragment? x) path
-                (core/key? x) pathset
-                (vector? x) (let [keys (into [] (filter core/key? x))]
-                              (if (empty? keys)
-                                path
-                                (conj path keys))))))]
-    (into [] (for [pathset (.-pathsets fragment)
-                   :let [pathset (stub-fragments pathset)]]
-               (into root pathset)))))
+;; NOTE:
+;; - this shouldn't be shared -- should be per fragment instance
+;; - doesn't need to be dynamic anymore ... but whatever!
+(def ^:dynamic *depth* nil)
 
-(defn query-pathsets [queries container]
-  (into [] (for [name (fragment-names container)
-                 :let [fragment (get-fragment container name)
-                       query (get queries name)
-                       pathsets (expand fragment)]
-                 pathset pathsets]
-             (into query pathset))))
+(defn full-fragment
+  [fragment]
+  (letfn [(walk-query [q]
+            (into []
+                  (mapcat (fn [entry]
+                            (cond
+                              (core/key? entry) [entry]
+                              (map? entry) (let [[k q] (first entry)
+                                                 q (walk-query q)]
+                                             (when (seq q)
+                                               [{k q}]))
+                              (fragment? entry) (if (recursive? entry)
+                                                  (binding [*depth* (dec (or *depth* (depth entry)))]
+                                                    (when (>= *depth* 0)
+                                                      (walk-query (query entry))))
+                                                  (walk-query (query entry))))))
+                  q))]
+    (walk-query (query fragment))))
+
+(defn full-query
+  [path fragment]
+  (core/prepend-query path (full-fragment fragment)))
+
+(defn local-fragment
+  [fragment]
+  (letfn [(walk-query [q]
+            (into []
+                  (comp (map (fn [entry]
+                               (cond
+                                 (core/key? entry) entry
+                                 (map? entry) (let [[k q] (first entry)
+                                                    q (walk-query q)]
+                                                (if (seq q)
+                                                  {k q}
+                                                  k))
+                                 (fragment? entry) nil)))
+                        (filter some?))
+                  q))]
+    (walk-query (query fragment))))
+
+(defn local-query
+  [path fragment]
+  (core/prepend-query path (local-fragment fragment)))
+
+;;; CONTAINER
+
+(defprotocol IContainer
+  (get-container-fragment [this name vars]))
+
+(defn container-fragment [f vars]
+  (LazyFragment. (delay (core/eval-query (f vars)))))
 
 (defn mock?
   [_]
   false)
-
-(defn default-prepare-variables [vars _]
-  vars)
-
-(defn get-container-fragment
-  [fragments name vars]
-  (when-let [fragment (get fragments name)]
-    (let [query (if (fn? fragment)
-                  (fragment vars)
-                  fragment)
-          pathsets (pull query)]
-      (Fragment. pathsets))))
 
 (defn get-path
   [props name]
@@ -269,49 +192,43 @@
 (defprotocol IDisposable
   (dispose [this]))
 
+;; TODO: get rid of this -- can be a function?
 #?(:cljs (deftype ContainerSubscription
-           [cb]
+           [^:mutable model ^:mutable query ^:mutable sub cb]
            IDisposable
            (dispose [this]
              (.unsubscribe this)
              nil)
 
            Object
-           (update [this model pathsets]
-             (let [current-model (.-model this)
-                   current-pathsets (.-pathsets this)]
-               (when (or (not= model current-model)
-                         (not= pathsets current-pathsets))
-                 (.unsubscribe this)
-                 (set! (.-model this) model)
-                 (set! (.-pathsets this) pathsets)
-                 (.subscribe this)))
+           (update [this new-model new-query]
+             (when (or (not= model new-model)
+                       (not= query new-query))
+               (.unsubscribe this)
+               (set! model new-model)
+               (set! query new-query)
+               (.subscribe this))
              this)
            (subscribe [this]
-             (let [model (.-model this)
-                   pathsets (.-pathsets this)
-                   sub (model/subscribe model pathsets cb)]
-               (set! (.-sub this) sub))
+             (set! sub (model/subscribe model query cb))
              this)
            (unsubscribe [this]
-             (when-let [sub (.-sub this)]
+             (when sub
                (sub))
              this)))
 
-#?(:cljs (defn container-subscription [model pathsets cb]
-           (let [sub (ContainerSubscription. cb)]
-             (.update sub model pathsets)
-             sub)))
+#?(:cljs (defn container-subscription [model query cb]
+           (.subscribe (ContainerSubscription. model query nil cb))))
 
 (defn create-fragment-pointers
-  [fragments props vars]
-  (into {} (for [name (keys fragments)
+  [container props vars]
+  (into {} (for [name (fragment-names container)
                  :let [root (get-path props name)]
                  :when root
-                 :let [fragment (get-container-fragment fragments name vars)
-                       pathsets (local-query root fragment)]]
+                 :let [fragment (get-container-fragment container name vars)
+                       query (local-query root fragment)]]
              [name {:root root
-                    :pathsets pathsets}])))
+                    :query query}])))
 
 (def variables-key "cambo$variables")
 
@@ -343,10 +260,11 @@
             (let [{:keys [run]} (variables* this)]
               (run variables cb true)))))
 
-#?(:cljs (defn create-container
-           [component {:keys [initial-variables prepare-variables fragments]
-                       :or {initial-variables {} prepare-variables default-prepare-variables}}]
-           (let [container (fn container []
+#?(:cljs (defn create-container*
+           [{:keys [initial-variables prepare-variables fragments]} component]
+           (let [fragment-names (into #{} (keys fragments))
+                 fragment-cache (volatile! {})
+                 container (fn container []
                              (this-as this
                                (.apply js/React.Component this (js-arguments))
                                (set! (.-pending this) nil)
@@ -370,11 +288,17 @@
 
              (specify! container
                IFragments
-               (fragment-names [_]
-                 (into #{} (keys fragments)))
-               (fragment [_ name]
-                 ;; TODO: figure out how routes work for external `get-fragment` calls -- it is not nil in relay
-                 (get-container-fragment fragments name (prepare-variables initial-variables nil))))
+               (fragment-names [_] fragment-names)
+               (fragment [this name]
+                 (get-container-fragment this name (prepare-variables initial-variables nil)))
+               IContainer
+               (get-container-fragment [_ name vars]
+                 (if-let [v (get @fragment-cache [name vars])]
+                   v
+                   (let [fragment-fn (get fragments name)
+                         fragment (container-fragment fragment-fn vars)]
+                     (vswap! fragment-cache assoc [name vars] fragment)
+                     fragment))))
 
              (specify! (.-prototype container)
                Object
@@ -385,8 +309,8 @@
                        variables (get (.-pending this) :variables variables)
                        variables (merge variables partial-vars)
                        next-variables (prepare-variables variables route)
-                       pointers (create-fragment-pointers fragments (props this) next-variables)
-                       pathsets (into [] (mapcat :pathsets (vals pointers)))
+                       pointers (create-fragment-pointers container (props this) next-variables)
+                       query (into [] (mapcat :query (vals pointers)))
                        on-readystate (fn [ready]
                                        (when ready
                                          (set! (.-pending this) nil)
@@ -400,8 +324,8 @@
                                        (when cb
                                          (cb ready)))]
                    (if force?
-                     (model/force model pathsets on-readystate)
-                     (model/prime model pathsets on-readystate))
+                     (model/force model query on-readystate)
+                     (model/prime model query on-readystate))
                    (set! (.-pending this) {:variables variables})))
 
                (initialize [this {:keys [cambo/variables]} props {:keys [route] :as context} vars]
@@ -413,24 +337,22 @@
                     :cambo/variables (assoc variables :variables next-vars)}))
 
                (update-fragment-pointers [this props vars]
-                 (set! (.-fragment-pointers this) (create-fragment-pointers fragments props vars)))
+                 (set! (.-fragment-pointers this) (create-fragment-pointers container props vars)))
 
                (update-subscription [this {:keys [model]}]
                  (let [pointers (.-fragment-pointers this)
-                       pathsets (into [] (mapcat :pathsets (vals pointers)))
+                       query (into [] (mapcat :query (vals pointers)))
                        subscription (if-let [subscription (.-subscription this)]
-                                      (.update subscription model pathsets)
-                                      (container-subscription model pathsets (fn []
-                                                                               (.handle-fragment-data-update this))))]
+                                      (.update subscription model query)
+                                      (container-subscription model query (fn []
+                                                                            (.handle-fragment-data-update this))))]
                    (set! (.-subscription this) subscription)))
 
                (get-query-data [this props {:keys [model]}]
                  (let [pointers (.-fragment-pointers this)
-                       pathsets (mapcat :pathsets (vals pointers))
-                       graph (-> model model/with-path-info (model/get-cache pathsets))
+                       query (into [] (mapcat :query (vals pointers)))
+                       graph (-> model model/with-path-info (model/pull-cache query))
                        query-data (into {} (map (fn [[name {:keys [root]}]]
-                                                  ;; how would this happen?
-                                                  ;:when (get props name)
                                                   [name (get-in graph root)])
                                                 pointers))]
                    query-data))
@@ -504,6 +426,15 @@
                (when-let [child (.. this -props -children)]
                  (React.Children.only child))))))
 
+(defn build-query
+  [queries container]
+  (into []
+        (mapcat (fn [[name path]]
+                  (let [fragment (get-fragment container name)
+                        query (full-query path fragment)]
+                    query)))
+        queries))
+
 #?(:cljs (do
            (defn ^{:jsdoc ["@constructor"]} Renderer []
              (this-as this
@@ -524,14 +455,14 @@
            (specify! (.-prototype Renderer)
              Object
              (run-queries [this {:keys [container model queries force]}]
-               (let [pathsets (query-pathsets queries container)
+               (let [query (build-query queries container)
                      on-readystate (fn [readystate]
                                      (if (.-mounted this)
                                        (set-state this {:readystate readystate})
                                        (.handle-readystate-change this readystate)))]
                  (if force
-                   (model/force model pathsets on-readystate)
-                   (model/prime model pathsets on-readystate))))
+                   (model/force model query on-readystate)
+                   (model/prime model query on-readystate))))
              (handle-readystate-change [this readystate]
                (when-let [on-readystate-change (:on-readystate-change (props this))]
                  (on-readystate-change readystate)))
@@ -558,8 +489,8 @@
                      {:keys [readystate]} (state this)
                      container-props (dissoc (props this) :container :model :queries :force)
                      container-props (into container-props
-                                           (for [[name query] queries]
-                                             [name {:cambo/path query}]))
+                                           (for [[name path] queries]
+                                             [name {:cambo/path path}]))
                      ;; TODO: support render prop -- handle js/undefined response
                      container-element (when readystate
                                          (js/React.createElement container
@@ -591,10 +522,7 @@
            ([this path args queries]
             (call-model this path args queries (fn [_])))
            ([this path args queries cb]
-            (let [{:keys [call]} (variables* this)
-                  queries (cond-> queries
-                                  (:this queries) (update :this pull)
-                                  (:refs queries) (update :refs pull))]
+            (let [{:keys [call]} (variables* this)]
               (call path args queries cb)))))
 
 ;;; MACROS
