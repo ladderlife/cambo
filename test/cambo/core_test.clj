@@ -37,7 +37,7 @@
 (deftest keyset-test
   (is (= :foo
          (keyset [:foo])))
-  (is (= [:foo "bar" 13]
+  (is (= ["bar" (range 13 14) :foo]
          (keyset [:foo "bar" 13]))))
 
 ;;; PATHS
@@ -62,8 +62,8 @@
                            [:video [0 (range 5 8)] :title]]))))
 
 (deftest pathsets-test
-  (is (= [[:one [:two :three]]
-          [:one "four" [0 1]]]
+  (is (= [[:one [:three :two]]
+          [:one "four" [(range 0 2)]]]
          (pathsets {:one {:two leaf
                           :three leaf
                           "four" {0 leaf
@@ -74,12 +74,12 @@
     (is (= [[:one :two]]
            (length-tree-pathsets {2 {:one {:two leaf}}}))))
   (testing "complex path"
-    (is (= [[:one [:two :three]]]
+    (is (= [[:one [:three :two]]]
            (length-tree-pathsets {2 {:one {:two leaf
                                            :three leaf}}}))))
   (testing "simple and complex path"
-    (is (= [[:one [:two :three]]
-            [:one [0 1 2 3] :summary]]
+    (is (= [[:one [:three :two]]
+            [:one [(range 0 4)] :summary]]
            (length-tree-pathsets {2 {:one {:two leaf
                                            :three leaf}}
                                   3 {:one {0 {:summary leaf}
@@ -88,9 +88,9 @@
                                            3 {:summary leaf}}}}))))
   (testing "pathmap that has overlapping branch and leaf nodes"
     (is (= [[:lolomo]
-            [:lolomo [:summary 13 14]]
-            [:lolomo [15 16 17] [:rating :summary]]
-            [:lolomo [13 14] :summary]]
+            [:lolomo [(range 13 15) :summary]]
+            [:lolomo [(range 15 18)] [:summary :rating]]
+            [:lolomo [(range 13 15)] :summary]]
            (length-tree-pathsets {1 {:lolomo leaf}
                                   2 {:lolomo {:summary leaf
                                               13 leaf
@@ -123,12 +123,12 @@
                   [:one (range 0 4) :summary]])))))
 
 (deftest collapse-test
-  (is (= [[:genres 0 :titles [0 1] [:name :rating]]]
+  (is (= [[:genres 0 :titles [(range 0 2)] [:name :rating]]]
          (collapse [[:genres 0 :titles 0 :name]
                     [:genres 0 :titles 0 :rating]
                     [:genres 0 :titles 1 :name]
                     [:genres 0 :titles 1 :rating]])))
-  (is (= [[:genres 0 :titles [0 1] [:name :rating]]]
+  (is (= [[:genres 0 :titles [(range 0 2)] [:name :rating]]]
          (collapse [[:genres 0 :titles 0 [:name :rating]]
                     [:genres 0 :titles 1 :name]
                     [:genres 0 :titles 1 :rating]]))))
