@@ -1,6 +1,7 @@
 (ns examples.ssr
   (:require [cambo.component :as comp :refer [defcomponent defcontainer]]
-            [cambo.core :as cam]))
+            [cambo.core :as cam]
+            [cambo.model :as model]))
 
 (defcomponent NotFound
               (render [this]
@@ -31,3 +32,14 @@
   (comp/full-fragment fragment))
 
 (comp/build-query {:todos [:todos/all]} TodoList)
+
+(comment
+
+  (let [model (model/model {:cache {:foo {:bar "baz"}}})]
+    @(model/pull model [{:foo [:bar]}]))
+
+  (let [model (model/model {:cache {:foo {:bar "baz"}}})]
+    (model/pull model [{:foo [:bar]}] (fn [value]
+                                        (println "value!" value))))
+
+  )

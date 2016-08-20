@@ -84,13 +84,21 @@
   paths)
 
 (defn pull
-  [{:keys [cache datasource] :as m} query cb]
-  (let [{:keys [graph missing]} (graph/pull @cache query (get-options m))]
-    (if (empty? missing)
-      (cb graph)
-      (core/pull datasource missing (fn [{:keys [graph]}]
-                                      (set-cache m [graph])
-                                      (cb (:graph (graph/pull @cache query (get-options m)))))))))
+  #?(:clj ([model query]
+           (pull model query (fn [_]))))
+  ([{:keys [cache datasource] :as m} query cb]
+    (let [{:keys [graph missing]} (graph/pull @cache query (get-options m))
+          #?@(:clj [response (promise)
+                    cb (fn [graph]
+                         (cb graph)
+                         (deliver response graph))])]
+      (if (empty? missing)
+        (cb graph)
+        (core/pull datasource missing (fn [{:keys [graph]}]
+                                        (set-cache m [graph])
+                                        (cb (:graph (graph/pull @cache query (get-options m)))))))
+      #?(:clj response
+         :cljs nil))))
 
 (defn set
   [{:keys [datasource] :as m} pathmaps cb]

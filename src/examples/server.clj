@@ -12,7 +12,6 @@
                         :user/gender :gender/male
                         :user/todos [1 2 3]}}))
 
-
 (defn get-users
   [users ids]
   (select-keys @users ids))
