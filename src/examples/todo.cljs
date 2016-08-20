@@ -60,6 +60,8 @@
                                   [{:user/todos [{(core/range 0 count) [:todo/id
                                                                         (get-fragment TodoDetails :todo)]}
                                                  :length]}])}
+              (initLocalState [this]
+                              {:foo "bar"})
               (handleTodoDelete [this todo-id]
                                 (let [{:keys [count]} (comp/variables this)]
                                   (comp/call-model this
@@ -72,6 +74,7 @@
               (render [this]
                       (let [{:keys [user]} (props this)
                             {:keys [user/todos]} user]
+                        (println "state!" (comp/state this))
                         (div nil
                              (ul nil
                                  (vec (for [idx (core/range-keys (core/range 0 10))

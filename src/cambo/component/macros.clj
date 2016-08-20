@@ -59,6 +59,9 @@
         ctor `(defn ~(with-meta name {:jsdoc ["@constructor"]}) []
                 (this-as this#
                          (.apply js/React.Component this# (js-arguments))
+                         (if-not (nil? (.-initLocalState this#))
+                           (set! (.-state this#) (cambo.component.->state (.initLocalState this#)))
+                           (set! (.-state this#) (cambo.component.->state {})))
                          this#))
         set-react-proto! `(set! (.-prototype ~name)
                                 (goog.object/clone js/React.Component.prototype))
