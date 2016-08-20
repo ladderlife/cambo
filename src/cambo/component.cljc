@@ -19,6 +19,8 @@
   ([comp key]
    (get (get-props (.-props comp)) key)))
 
+#?(:cljs (declare container?))
+
 #?(:cljs (defn ->props
            [{:keys [key ref] :as props}]
            (let [js-props (js-obj props-key props)]
@@ -27,7 +29,10 @@
              (when key (aset js-props "key" key))
              ;; we pass the component as the ref -- not the container itself
              ;; if we ever need the container itself, can revisit this
-             (when ref (aset js-props "ref" #(ref (some-> % .-component))))
+             ;; TODO: assert ref is a fn, not string
+             (when ref (aset js-props "ref" #(ref (if (container? %)
+                                                    (some-> % .-component)
+                                                    %))))
              js-props)))
 
 (defn get-children
@@ -260,6 +265,12 @@
             (let [{:keys [run]} (variables* this)]
               (run variables cb true)))))
 
+#?(:cljs (defn ^:boolean container?
+           [x]
+           (if-not (nil? x)
+             (true? (. x -cambo$isContainer))
+             false)))
+
 #?(:cljs (defn create-container*
            [{:keys [initial-variables prepare-variables fragments]} component]
            (let [fragment-names (into #{} (keys fragments))
@@ -285,6 +296,8 @@
                    (goog.object/clone js/React.Component.prototype))
 
              (set! (.-contextTypes container) (->context React.PropTypes.object))
+
+             (set! (.. container -prototype -cambo$isContainer) true)
 
              (specify! container
                IFragments

@@ -23,6 +23,12 @@
 (def input (tag "input"))
 (def button (tag "button"))
 
+(defcomponent Foo
+              (render [this]
+                      (div "Hello")))
+
+(def foo (comp/factory Foo))
+
 (defcontainer TodoDetails
               :fragments {:todo [:todo/id
                                  :todo/text
@@ -43,6 +49,7 @@
                                              :checked complete
                                              :onChange #(.handleCompleteChange this %)})
                                  (div nil text)
+                                 (foo {:ref #(println %)})
                                  (button #js {:onClick #(.handleDeleteClick this %)} "delete"))))))
 
 (def todo-details (comp/factory TodoDetails))
@@ -72,6 +79,7 @@
                                             :when todo]
                                         (todo-details {:todo todo
                                                        :key id
+                                                       :ref #(println %)
                                                        :on-delete #(.handleTodoDelete this %)}))))))))
 
 (def todo-list (comp/factory TodoList))
