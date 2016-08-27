@@ -2,6 +2,8 @@
   #?(:cljs (:require-macros [cambo.component.macros]))
   (:require [cambo.core :as core]
             [cambo.model :as model]
+            [cambo.utils :as utils]
+            [cambo.profile #?(:clj :refer :cljs :refer-macros) [p pa]]
             #?(:clj [cambo.component.macros])
             #?(:cljs [cljsjs.react])))
 
@@ -303,7 +305,8 @@
                IFragments
                (fragment-names [_] fragment-names)
                (fragment [this name]
-                 (get-container-fragment this name (prepare-variables initial-variables nil)))
+                 (p :container/fragment
+                    (get-container-fragment this name (prepare-variables initial-variables nil))))
                IContainer
                (get-container-fragment [_ name vars]
                  (if-let [v (get @fragment-cache [name vars])]
@@ -342,83 +345,93 @@
                    (set! (.-pending this) {:variables variables})))
 
                (initialize [this {:keys [cambo/variables]} props {:keys [route] :as context} vars]
-                 (let [next-vars (prepare-variables vars route)]
-                   (.update-fragment-pointers this props next-vars)
-                   (.update-subscription this context)
-                   {:query-data (.get-query-data this props context)
-                    :variables vars
-                    :cambo/variables (assoc variables :variables next-vars)}))
+                 (p :container/initialize
+                    (let [next-vars (prepare-variables vars route)]
+                      (.update-fragment-pointers this props next-vars)
+                      (.update-subscription this context)
+                      {:query-data (.get-query-data this props context)
+                       :variables vars
+                       :cambo/variables (assoc variables :variables next-vars)})))
 
                (update-fragment-pointers [this props vars]
-                 (set! (.-fragment-pointers this) (create-fragment-pointers container props vars)))
+                 (p :container/update-fragment-pointers
+                    (set! (.-fragment-pointers this) (create-fragment-pointers container props vars))))
 
                (update-subscription [this {:keys [model]}]
-                 (let [pointers (.-fragment-pointers this)
-                       query (into [] (mapcat :query (vals pointers)))
-                       subscription (if-let [subscription (.-subscription this)]
-                                      (.update subscription model query)
-                                      (container-subscription model query (fn []
-                                                                            (.handle-fragment-data-update this))))]
-                   (set! (.-subscription this) subscription)))
+                 (p :container/update-subscription
+                    (let [pointers (.-fragment-pointers this)
+                          query (into [] (mapcat :query (vals pointers)))
+                          subscription (if-let [subscription (.-subscription this)]
+                                         (.update subscription model query)
+                                         (container-subscription model query (fn []
+                                                                               (.handle-fragment-data-update this))))]
+                      (set! (.-subscription this) subscription))))
 
                (get-query-data [this props {:keys [model]}]
-                 (let [pointers (.-fragment-pointers this)
-                       query (into [] (mapcat :query (vals pointers)))
-                       graph (-> model model/with-path-info (model/pull-cache query))
-                       query-data (into {} (map (fn [[name {:keys [root]}]]
-                                                  [name (get-in graph root)])
-                                                pointers))]
-                   query-data))
+                 (p :container/get-query-data
+                    (let [pointers (.-fragment-pointers this)
+                          query (into [] (mapcat :query (vals pointers)))
+                          graph (-> model model/with-path-info (model/pull-cache query))
+                          query-data (into {} (map (fn [[name {:keys [root]}]]
+                                                     [name (get-in graph root)])
+                                                   pointers))]
+                      query-data)))
 
                (handle-fragment-data-update [this]
-                 (when (.-mounted this)
-                   (set-state this {:query-data (.get-query-data this (props this) (context this))})))
+                 (p :container/handle-fragment-data-update
+                    (when (.-mounted this)
+                      (set-state this {:query-data (.get-query-data this (props this) (context this))}))))
 
                (componentWillMount [this]
-                 (when-not (mock? this)
-                   (set-state this (fn [state]
-                                     (.initialize this state (props this) (context this) initial-variables)))))
+                 (p :container/componentWillMount
+                    (when-not (mock? this)
+                      (set-state this (fn [state]
+                                        (.initialize this state (props this) (context this) initial-variables))))))
 
                (componentWillReceiveProps [this next-props next-context]
-                 (when-not (mock? this)
-                   (set-state this (fn [{:keys [variables] :as state}]
-                                     (.initialize this state (get-props next-props) (get-context next-context) variables)))))
+                 (p :container/componentWillReceiveProps
+                    (when-not (mock? this)
+                      (set-state this (fn [{:keys [variables] :as state}]
+                                        (.initialize this state (get-props next-props) (get-context next-context) variables))))))
 
                (componentWillUnmount [this]
-                 (set! (.-mounted this) false)
-                 (when-let [sub (.-subscription this)]
-                   (dispose sub)))
+                 (p :container/componentWillUnmount
+                    (set! (.-mounted this) false)
+                    (when-let [sub (.-subscription this)]
+                      (dispose sub))))
 
                (shouldComponentUpdate [this next-props next-state next-context]
-                 (if (not= (get-children next-props)
-                           (children this))
-                   true
-                   (let [update-props (fn [props]
-                                        (reduce (fn [props key]
-                                                  (let [path (get-path props key)]
-                                                    (assoc props key path)))
-                                                props
-                                                (keys fragments)))
-                         current-props (update-props (props this))
-                         current-state (state this)
-                         current-context (context this)
-                         next-props (update-props (get-props next-props))
-                         next-state (get-state next-state)
-                         next-context (get-context next-context)]
-                     (or (not= current-props next-props)
-                         (not= current-state next-state)
-                         (not= current-context next-context)))))
+                 (p :container/shouldComponentUpdate
+                    (if (not= (get-children next-props)
+                              (children this))
+                      true
+                      (let [update-props (fn [props]
+                                           (reduce (fn [props key]
+                                                     (let [path (get-path props key)]
+                                                       (assoc props key path)))
+                                                   props
+                                                   (keys fragments)))
+                            current-props (update-props (props this))
+                            current-state (state this)
+                            current-context (context this)
+                            next-props (update-props (get-props next-props))
+                            next-state (get-state next-state)
+                            next-context (get-context next-context)]
+                        (or (not= current-props next-props)
+                            (not= current-state next-state)
+                            (not= current-context next-context))))))
 
                (render [this]
-                 (let [{:keys [query-data cambo/variables]} (state this)
-                       component-props (merge (props this)
-                                              query-data)
-                       children (.. this -props -children)]
-                   (js/React.createElement component
-                                           (js-obj props-key component-props
-                                                   variables-key variables
-                                                   "ref" #(set! (.-component this) %))
-                                           children))))
+                 (p :container/render
+                    (let [{:keys [query-data cambo/variables]} (state this)
+                          component-props (merge (props this)
+                                                 query-data)
+                          children (.. this -props -children)]
+                      (js/React.createElement component
+                                              (js-obj props-key component-props
+                                                      variables-key variables
+                                                      "ref" #(set! (.-component this) %))
+                                              children)))))
 
              container)))
 
@@ -468,50 +481,58 @@
            (specify! (.-prototype Renderer)
              Object
              (run-queries [this {:keys [container model queries force]}]
-               (let [query (build-query queries container)
-                     on-readystate (fn [readystate]
-                                     (if (.-mounted this)
-                                       (set-state this {:readystate readystate})
-                                       (.handle-readystate-change this readystate)))]
-                 (if force
-                   (model/force model query on-readystate)
-                   (model/prime model query on-readystate))))
+               (p :renderer/run-queries
+                  (let [query (build-query queries container)
+                        on-readystate (fn [readystate]
+                                        (when (.-mounted this)
+                                          (p :renderer/set-state (set-state this {:readystate readystate}))
+                                          #_(set-state this {:readystate readystate})
+                                          (.handle-readystate-change this readystate)))]
+                    (if force
+                      (model/force model query on-readystate)
+                      (model/prime model query on-readystate)))))
              (handle-readystate-change [this readystate]
-               (when-let [on-readystate-change (:on-readystate-change (props this))]
-                 (on-readystate-change readystate)))
+               (p :renderer/handle-readystate-change
+                  (when-let [on-readystate-change (:on-readystate-change (props this))]
+                    (on-readystate-change readystate))))
              (getChildContext [this]
                (let [{:keys [model]} (props this)]
                  (->context {:model model})))
              (componentDidMount [this]
-               (.run-queries this (props this)))
+               (p :renderer/componentDidMount
+                  (.run-queries this (props this))))
              (componentWillReceiveProps [this next-props]
-               (let [renderer-props [:model :queries :container :force]]
-                 (when-not (= (select-keys (props this) renderer-props)
-                              (select-keys (get-props next-props) renderer-props))
-                   (set-state this {:readystate nil})
-                   (.run-queries this (get-props next-props)))))
+               (p :renderer/componentWillReceiveProps
+                  (let [renderer-props [:model :queries :container :force]]
+                    (when-not (= (select-keys (props this) renderer-props)
+                                 (select-keys (get-props next-props) renderer-props))
+                      (set-state this {:readystate nil})
+                      (.run-queries this (get-props next-props))))))
              (componentDidUpdate [this prev-props prev-state]
-               (let [readystate (:readystate (state this))
-                     prev-readystate (:readystate (get-state prev-state))]
-                 (when-not (= readystate prev-readystate)
-                   (.handle-readystate-change this readystate))))
+               (p :renderer/componentDidUpdate
+                  (let [readystate (:readystate (state this))
+                        prev-readystate (:readystate (get-state prev-state))]
+                    (when-not (= readystate prev-readystate)
+                      (.handle-readystate-change this readystate)))))
              (componentWillUnmount [this]
-               (set! (.-mounted this) false))
+               (p :renderer/componentWillUnmount
+                  (set! (.-mounted this) false)))
              (render [this]
-               (let [{:keys [container queries]} (props this)
-                     {:keys [readystate]} (state this)
-                     container-props (dissoc (props this) :container :model :queries :force)
-                     container-props (into container-props
-                                           (for [[name path] queries]
-                                             [name {:cambo/path path}]))
-                     ;; TODO: support render prop -- handle js/undefined response
-                     container-element (when readystate
-                                         (js/React.createElement container
-                                                                 (->props container-props)
-                                                                 (children this)))]
-                 (js/React.createElement StaticContainer
-                                         #js {"shouldUpdate" (some? container-element)}
-                                         container-element))))))
+               (p :renderer/render
+                  (let [{:keys [container queries]} (props this)
+                        {:keys [readystate]} (state this)
+                        container-props (dissoc (props this) :container :model :queries :force)
+                        container-props (into container-props
+                                              (for [[name path] queries]
+                                                [name {:cambo/path path}]))
+                        ;; TODO: support render prop -- handle js/undefined response
+                        container-element (when readystate
+                                            (js/React.createElement container
+                                                                    (->props container-props)
+                                                                    (children this)))]
+                    (js/React.createElement StaticContainer
+                                            #js {"shouldUpdate" (some? container-element)}
+                                            container-element)))))))
 
 #?(:cljs (defn renderer [props & children]
            (apply js/React.createElement Renderer (->props props) children)))
@@ -541,23 +562,13 @@
 ;;; MACROS
 
 #?(:clj
-   (defn- cljs-env? [env]
-     (boolean (:ns env))))
-
-#?(:clj
-   (defmacro if-cljs
-     "Return `then` if we are generating cljs code and `else` for Clojure code."
-     [then else]
-     (if (cljs-env? &env) then else)))
-
-#?(:clj
    (defmacro defcomponent [name & forms]
-     `(if-cljs
+     `(utils/if-cljs
         (cambo.component.macros/defcomponent-cljs ~name ~@forms)
         (cambo.component.macros/defcomponent-clj ~name ~@forms))))
 
 #?(:clj
    (defmacro defcontainer [name & forms]
-     `(if-cljs
+     `(utils/if-cljs
         (cambo.component.macros/defcontainer-cljs ~name ~@forms)
         (cambo.component.macros/defcontainer-clj ~name ~@forms))))
